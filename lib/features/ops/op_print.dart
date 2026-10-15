@@ -10,9 +10,10 @@ import '../../shared/models/entities.dart';
 import 'op_kind.dart';
 
 /// طباعة العملية PDF — نفس شكل صورة الأوردر بالظبط:
-/// ترويسة 3×3 + جدول (م/الصنف/الكمية/الوزن/السعر/القيمة) + صف مدمج
-/// لكل صنف وتحته صفوف مسحاته (وزن كل كرتونة) + صف المجموع.
-/// التفصيلي والإجمالي نفس الشكل (الصورة نفسها ملف إجمالي بتفصيلة).
+/// ترويسة 3×3 + جدول (م/الصنف/الكمية/الوزن/السعر/القيمة).
+/// التفصيلي: صف مدمج لكل صنف + تفصيلة مسحاته (وزن كل كرتونة).
+/// الإجمالي: الصفوف المدمجة فقط (صنف + كمية + وزن إجمالي)
+/// بدون تفصيل المسحات.
 Future<String> printOperation(WidgetRef ref, OpKind kind, String id,
     {bool detailed = false}) async {
   // ── جمع البيانات ──
@@ -111,5 +112,6 @@ Future<String> printOperation(WidgetRef ref, OpKind kind, String id,
     rawItems: rawItems,
     folderPath: folder.path,
     fileName: detailed ? '$num - Order-details.pdf' : '$num - Order.pdf',
+    detailed: detailed,
   );
 }

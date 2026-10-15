@@ -93,8 +93,10 @@ class PdfService {
   /// ترويسة 3×3 (رقم/نوع/تاريخ — كود/اسم الطرف/إجمالي القيمة —
   /// إجمالي الكمية/إجمالي الوزن/المستخدم) + جدول (م/الصنف/الكمية/
   /// الوزن/السعر/القيمة) بترتيب: أولًا صف مدمج لكل صنف (كل الأصناف
-  /// بكمياتها)، ثم تفصيلة كل صنف (صف عنوان + صف لكل مسحة بوزنها
-  /// تحت عمود الصنف)، ثم صف المجموع (إجمالي الوزن + المجموع).
+  /// بكمياتها)، ثم — في التفصيلي فقط — تفصيلة كل صنف (صف عنوان +
+  /// صف لكل مسحة بوزنها تحت عمود الصنف)، ثم صف المجموع.
+  /// الإجمالي: الأصناف المدمجة فقط (صنف + كمية + وزن إجمالي)
+  /// بدون تفصيل المسحات.
   /// النص العربي بترتيبه الطبيعي ويُرسم RTL عبر textDirection
   /// (بدون عكس كلمات).
   Future<String> orderPdf({
@@ -111,6 +113,7 @@ class PdfService {
     required List<DocLine> rawItems,
     required String folderPath,
     required String fileName,
+    bool detailed = true,
   }) async {
     await _loadFonts();
     // تجميع بنفس ترتيب الظهور.
@@ -164,19 +167,32 @@ class PdfService {
             // القسم الأول: صف مدمج لكل صنف (كل الأصناف بكمياتها).
             for (var gi = 0; gi < order.length; gi++)
               _mergedRow(order[gi], groups[order[gi]]!, gi + 1),
-            // القسم الثاني: تفصيلة كل صنف — صف عنوان (الصنف + اسمه)
-            // ثم صف لكل مسحة (وزنها تحت عمود الصنف + رقمها).
-            for (var gi = 0; gi < order.length; gi++)
-              ..._detailRows(order[gi], groups[order[gi]]!),
-            // صف المجموع: إجمالي الوزن + المجموع (باقي الخلايا فاضية).
-            pw.TableRow(children: [
-              _ocell(''),
-              _ocell(''),
-              _ocell(''),
-              _ocell(''),
-              _ocell(_f3(totalWeight)),
-              _ocell('المجموع', bold: true),
-            ]),
+            // القسم الثاني (تفصيلي فقط): تفصيلة كل صنف — صف عنوان
+            // (الصنف + اسمه) ثم صف لكل مسحة (وزنها تحت عمود الصنف
+            // + رقمها). الإجمالي يتخطى التفصيلة.
+            if (detailed)
+              for (var gi = 0; gi < order.length; gi++)
+                ..._detailRows(order[gi], groups[order[gi]]!),
+            // صف المجموع: في التفصيلي (زي الصورة) إجمالي الوزن +
+            // المجموع فقط، وفي الإجمالي إجمالي القيمة والوزن والكمية.
+            if (detailed)
+              pw.TableRow(children: [
+                _ocell(''),
+                _ocell(''),
+                _ocell(''),
+                _ocell(''),
+                _ocell(_f3(totalWeight)),
+                _ocell('المجموع', bold: true),
+              ])
+            else
+              pw.TableRow(children: [
+                _ocell(_f3(totalPrice)),
+                _ocell(''),
+                _ocell(_f3(totalWeight)),
+                _ocell(_fq(totalQty)),
+                _ocell('المجموع', bold: true),
+                _ocell(''),
+              ]),
           ],
         ),
       ],
