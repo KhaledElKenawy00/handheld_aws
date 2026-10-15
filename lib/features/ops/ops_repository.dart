@@ -693,4 +693,26 @@ class OpsRepo {
       await txn.delete('op_headers', where: 'id=?', whereArgs: [id]);
     });
   }
+
+  /// مسح عمليات بأنواع محددة (مرتجع عميل/مرتجع مورد) مع بنودها (للأرشفة) —
+  /// بدون عكس المخزون وبدون مساس بالأصناف/الأطراف. يُرجع عدد المحذوفة.
+  Future<int> deleteByKinds(List<String> kinds) async {
+    if (kinds.isEmpty) return 0;
+    final d = await _db();
+    return d.transaction((txn) async {
+      final ph = List.filled(kinds.length, '?').join(',');
+      final h = await txn.rawQuery(
+          'SELECT COUNT(*) c FROM op_headers WHERE kind IN ($ph)', kinds);
+      final count = (h.first['c'] as num).toInt();
+      final ids = await txn.query('op_headers',
+          columns: ['id'], where: 'kind IN ($ph)', whereArgs: kinds);
+      for (final r in ids) {
+        final id = r['id'].toString();
+        await txn.delete('op_items', where: 'opId=?', whereArgs: [id]);
+      }
+      await txn.delete('op_headers',
+          where: 'kind IN ($ph)', whereArgs: kinds);
+      return count;
+    });
+  }
 }

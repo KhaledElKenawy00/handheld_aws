@@ -414,6 +414,21 @@ class ReceiptRepository {
       await txn.delete('receipts', where: 'id=?', whereArgs: [id]);
     });
   }
+
+  /// مسح كل أذون الاستلام وبنودها (للأرشفة) — بدون عكس المخزون
+  /// (البضاعة دخلت فعلًا والرصيد سليم) وبدون مساس بالأصناف/العملاء.
+  /// يُرجع عدد الأذون المحذوفة.
+  Future<int> deleteAllVouchers() async {
+    final d = await _db();
+    return d.transaction((txn) async {
+      final h =
+          await txn.rawQuery('SELECT COUNT(*) c FROM receipts');
+      final count = (h.first['c'] as num).toInt();
+      await txn.delete('receipt_items');
+      await txn.delete('receipts');
+      return count;
+    });
+  }
 }
 
 /// أذون التسليم — مع منع السالب
@@ -786,6 +801,21 @@ class DeliveryRepository {
         });
       }
       await txn.delete('deliveries', where: 'id=?', whereArgs: [id]);
+    });
+  }
+
+  /// مسح كل أذون التسليم وبنودها (للأرشفة) — بدون عكس المخزون
+  /// (البضاعة خرجت فعلًا والرصيد سليم) وبدون مساس بالأصناف/العملاء.
+  /// يُرجع عدد الأذون المحذوفة.
+  Future<int> deleteAllVouchers() async {
+    final d = await _db();
+    return d.transaction((txn) async {
+      final h =
+          await txn.rawQuery('SELECT COUNT(*) c FROM deliveries');
+      final count = (h.first['c'] as num).toInt();
+      await txn.delete('delivery_items');
+      await txn.delete('deliveries');
+      return count;
     });
   }
 }

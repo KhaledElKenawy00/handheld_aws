@@ -11,6 +11,8 @@ import '../../../core/providers.dart';
 import '../../../core/scanner/scanner_providers.dart';
 import '../../../shared/widgets/app_ui.dart';
 import '../../../shared/widgets/common.dart';
+import '../../../shared/widgets/pc_send.dart';
+import '../pc_export_screen.dart';
 
 /// الإعدادات: بيانات المنشأة + المخزون السالب + Scanner + نسخ احتياطي
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -155,7 +157,24 @@ class _SS extends ConsumerState<SettingsScreen> {
     }
   }
 
-  Future<void> _backup() async {    setState(() => busyBackup = true);
+  Future<void> _backup() async {
+    if (await askPcOrDevice(context)) {
+      if (!mounted) return;
+      setState(() => busyBackup = true);
+      try {
+        await generateAndSendToPc(
+          context: context,
+          ref: ref,
+          generate: () =>
+              ref.read(backupServiceProvider).createBackup(),
+        );
+      } finally {
+        if (mounted) setState(() => busyBackup = false);
+      }
+      return;
+    }
+    if (!mounted) return;
+    setState(() => busyBackup = true);
     try {
       await Permission.storage.request();
       final path =
@@ -192,6 +211,30 @@ class _SS extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _exportAllPdf() async {
+    if (await askPcOrDevice(context)) {
+      if (!mounted) return;
+      setState(() {
+        busyPdf = true;
+        exportStep = 'جارٍ الإرسال للكمبيوتر...';
+      });
+      try {
+        await generateAndSendToPc(
+          context: context,
+          ref: ref,
+          generate: () =>
+              ref.read(fullExportServiceProvider).exportAllPdf(),
+        );
+      } finally {
+        if (mounted) {
+          setState(() {
+            busyPdf = false;
+            exportStep = '';
+          });
+        }
+      }
+      return;
+    }
+    if (!mounted) return;
     setState(() {
       busyPdf = true;
       exportStep = 'جارٍ التجهيز...';
@@ -238,6 +281,30 @@ class _SS extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _exportAllExcel() async {
+    if (await askPcOrDevice(context)) {
+      if (!mounted) return;
+      setState(() {
+        busyExcel = true;
+        exportStep = 'جارٍ الإرسال للكمبيوتر...';
+      });
+      try {
+        await generateAndSendToPc(
+          context: context,
+          ref: ref,
+          generate: () =>
+              ref.read(fullExportServiceProvider).exportAllExcel(),
+        );
+      } finally {
+        if (mounted) {
+          setState(() {
+            busyExcel = false;
+            exportStep = '';
+          });
+        }
+      }
+      return;
+    }
+    if (!mounted) return;
     setState(() {
       busyExcel = true;
       exportStep = 'جارٍ التجهيز...';
@@ -389,6 +456,19 @@ class _SS extends ConsumerState<SettingsScreen> {
                   if (context.mounted) showError(context, e);
                 }
               }),
+        ),
+        const Divider(),
+        const AppSectionTitle(title: 'الإرسال للكمبيوتر (شبكة محلية)'),
+        ListTile(
+          leading: const Icon(Icons.lan_outlined),
+          title: const Text('إعدادات الكمبيوتر (SMB)'),
+          subtitle: const Text(
+              'IP + مشاركة ويندوز أو Samba لينكس — ثم زرار الإرسال في التفاصيل'),
+          trailing: const Icon(Icons.chevron_left),
+          onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const PcExportScreen())),
         ),
         const Divider(),
         FilledButton(

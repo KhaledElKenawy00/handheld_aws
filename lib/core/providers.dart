@@ -4,7 +4,9 @@ import '../core/services/backup_service.dart';
 import '../core/services/code_generator_service.dart';
 import '../core/services/excel_export_service.dart';
 import '../core/services/full_export_service.dart';
+import '../core/services/archive_service.dart';
 import '../core/services/import_service.dart';
+import '../core/services/pc_export_service.dart';
 import '../core/services/pdf_service.dart';
 import '../core/services/settings_service.dart';
 import '../core/services/storage_service.dart';
@@ -33,6 +35,8 @@ final fullExportServiceProvider = Provider((ref) => FullExportService(
 final backupServiceProvider =
     Provider((ref) => BackupService(storage: ref.watch(storageServiceProvider)));
 final settingsServiceProvider = Provider((_) => SettingsService());
+final pcExportServiceProvider = Provider((_) => PcExportService());
+final archiveServiceProvider = Provider((_) => ArchiveService());
 final docNumberServiceProvider = Provider((_) => DocumentNumberService());
 final usersRepoProvider = Provider((_) => UsersRepo());
 final warehouseRepoProvider = Provider((_) => WarehouseRepo());

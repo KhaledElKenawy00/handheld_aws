@@ -14,8 +14,8 @@ import '../../shared/models/entities.dart';
 /// الباكب الشامل (النوع 2 = PDF / النوع 3 = Excel):
 /// يصدّر كل البيانات: أصناف + موردين + عملاء + مخازن + أذون
 /// (استلام/تسليم) + عمليات (مرتجع عميل/مورد + تحويل داخلي/خارجي)،
-/// + ملف مستقل لكل مورد (كل أذونه بتفاصيلها)
-/// + ملف مستقل لكل عميل (كل أذونه بتفاصيلها)،
+/// + فولدر باسم كل مورد جواه سجل تعاملاته كامل
+/// + فولدر باسم كل عميل جواه سجل تعاملاته كامل،
 /// ثم يضغط الكل في ZIP واحد للمشاركة/الاحتفاظ.
 class FullExportService {
   final StorageService storage;
@@ -118,6 +118,31 @@ class FullExportService {
     return map;
   }
 
+  /// اسم فولدر آمن من اسم العميل/المورد (بدون محارف ممنوعة في
+  /// الملفات) — مع تجنب التكرار بإضافة الكود عند الحاجة.
+  /// عامة وثابتة حتى تستخدمها الأرشفة بنفس التسمية (نفس الفولدرات).
+  static String partnerFolderName(
+      String desc, String code, Set<String> used) {
+    var base = desc
+        .trim()
+        .replaceAll(RegExp(r'[\\/:\*\?"<>\|]'), '-')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (base.isEmpty) base = code;
+    var out = base;
+    if (used.contains(out)) out = '$base ($code)';
+    var i = 2;
+    while (used.contains(out) && i < 100) {
+      out = '$base ($code-$i)';
+      i++;
+    }
+    used.add(out);
+    return out;
+  }
+
+  String _partnerDirName(String desc, String code, Set<String> used) =>
+      partnerFolderName(desc, code, used);
+
   Future<String> _zipDir(String dirPath) async {
     final zipPath = '$dirPath.zip';
     final encoder = ZipFileEncoder();
@@ -157,6 +182,7 @@ class FullExportService {
     onStep?.call('ملفات الموردين...');
     final supDir = Directory(p.join(root, 'Suppliers'));
     await supDir.create(recursive: true);
+    final usedSup = <String>{};
     for (final s in suppliers) {
       final db = await DatabaseHelper.instance.db;
       final hRows = await db.query('receipts',
@@ -166,12 +192,17 @@ class FullExportService {
       final headers = hRows.map(ReceiptHeader.fromMap).toList();
       final items =
           await _receiptItemsById(headers.map((e) => e.id).toList());
-      await pdf.supplierDossierPdf(s, headers, items, supDir.path);
+      // فولدر باسم المورد جواه سجل تعاملاته كامل.
+      final dir = Directory(p.join(
+          supDir.path, _partnerDirName(s.desc, s.code, usedSup)));
+      await dir.create(recursive: true);
+      await pdf.supplierDossierPdf(s, headers, items, dir.path);
     }
 
     onStep?.call('ملفات العملاء...');
     final cusDir = Directory(p.join(root, 'Customers'));
     await cusDir.create(recursive: true);
+    final usedCus = <String>{};
     for (final c in customers) {
       final db = await DatabaseHelper.instance.db;
       final hRows = await db.query('deliveries',
@@ -181,7 +212,11 @@ class FullExportService {
       final headers = hRows.map(DeliveryHeader.fromMap).toList();
       final items =
           await _deliveryItemsById(headers.map((e) => e.id).toList());
-      await pdf.customerDossierPdf(c, headers, items, cusDir.path);
+      // فولدر باسم العميل جواه سجل تعاملاته كامل.
+      final dir = Directory(p.join(
+          cusDir.path, _partnerDirName(c.desc, c.code, usedCus)));
+      await dir.create(recursive: true);
+      await pdf.customerDossierPdf(c, headers, items, dir.path);
     }
 
     onStep?.call('الضغط...');
@@ -217,6 +252,7 @@ class FullExportService {
     final db = await DatabaseHelper.instance.db;
     final supDir = Directory(p.join(root, 'Suppliers'));
     await supDir.create(recursive: true);
+    final usedSupX = <String>{};
     for (final s in suppliers) {
       final hRows = await db.query('receipts',
           where: 'supplierCode=?',
@@ -225,12 +261,16 @@ class FullExportService {
       final headers = hRows.map(ReceiptHeader.fromMap).toList();
       final items =
           await _receiptItemsById(headers.map((e) => e.id).toList());
-      await excel.supplierDossierExcel(s, headers, items, supDir.path);
+      final dir = Directory(p.join(
+          supDir.path, _partnerDirName(s.desc, s.code, usedSupX)));
+      await dir.create(recursive: true);
+      await excel.supplierDossierExcel(s, headers, items, dir.path);
     }
 
     onStep?.call('ملفات العملاء...');
     final cusDir = Directory(p.join(root, 'Customers'));
     await cusDir.create(recursive: true);
+    final usedCusX = <String>{};
     for (final c in customers) {
       final hRows = await db.query('deliveries',
           where: 'customerCode=?',
@@ -239,7 +279,10 @@ class FullExportService {
       final headers = hRows.map(DeliveryHeader.fromMap).toList();
       final items =
           await _deliveryItemsById(headers.map((e) => e.id).toList());
-      await excel.customerDossierExcel(c, headers, items, cusDir.path);
+      final dir = Directory(p.join(
+          cusDir.path, _partnerDirName(c.desc, c.code, usedCusX)));
+      await dir.create(recursive: true);
+      await excel.customerDossierExcel(c, headers, items, dir.path);
     }
 
     onStep?.call('الضغط...');

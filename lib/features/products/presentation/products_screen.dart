@@ -505,9 +505,7 @@ class _ProductFormState extends ConsumerState<ProductFormRoute> {
 }
 
 /// مركز الاستيراد من شيت Excel — مع Preview:
-/// أصناف / موردين / عملاء / أذون استلام / أذون تسليم / مرتجعات.
-/// صيغة الأذون: party | date | product | qty (+ voucher | weight | price اختياري)
-/// — الصفوف بنفس رقم الإذن (أو نفس الطرف+التاريخ) = إذن واحد.
+/// أصناف / موردين / عملاء فقط.
 class ImportHubScreen extends ConsumerStatefulWidget {
   final int initial;
   const ImportHubScreen({super.key, this.initial = 0});
@@ -520,7 +518,6 @@ class _ImportHubState extends ConsumerState<ImportHubScreen> {
   String? fileName;
   File? file;
   String? kind;
-  String returnsKind = 'مرتجع عميل';
   bool busy = false;
 
   @override
@@ -537,25 +534,13 @@ class _ImportHubState extends ConsumerState<ImportHubScreen> {
     'products': 'الأصناف',
     'suppliers': 'الموردين',
     'customers': 'العملاء',
-    'receipts': 'أذون استلام',
-    'deliveries': 'أذون تسليم',
-    'returns': 'مرتجعات',
   };
 
   static const _formats = {
     'products': 'code | desc',
     'suppliers': 'code | desc',
     'customers': 'code | desc',
-    'receipts':
-        'party (كود المورد) | date | product (كود الصنف) | qty (+ voucher | weight | price اختياري)',
-    'deliveries':
-        'party (كود العميل) | date | product (كود الصنف) | qty (+ voucher | weight | price اختياري)',
-    'returns':
-        'party (كود العميل/المورد حسب النوع) | date | product | qty (+ voucher | weight | price اختياري)',
   };
-
-  bool get _isVoucher =>
-      kind == 'receipts' || kind == 'deliveries' || kind == 'returns';
 
   Future<void> _pick(String k) async {
     final r = await FilePicker.platform.pickFiles(
@@ -584,16 +569,9 @@ class _ImportHubState extends ConsumerState<ImportHubScreen> {
     setState(() => busy = true);
     try {
       final svc = ref.read(importServiceProvider);
-      final byUser =
-          ref.read(currentUserProvider)?.username ?? 'استيراد';
       final sum = switch (kind) {
-        'products' => await svc.importProducts(file!),
         'suppliers' => await svc.importSuppliers(file!),
         'customers' => await svc.importCustomers(file!),
-        'receipts' => await svc.importReceipts(file!, byUser: byUser),
-        'deliveries' => await svc.importDeliveries(file!, byUser: byUser),
-        'returns' => await svc.importReturns(file!, returnsKind,
-            byUser: byUser),
         _ => await svc.importProducts(file!),
       };
       ref.invalidate(productListProvider);
@@ -610,13 +588,8 @@ class _ImportHubState extends ConsumerState<ImportHubScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('إجمالي الصفوف: ${sum.total}'),
-                  if (_isVoucher) ...[
-                    Text('أذون جديدة: ${sum.imported}'),
-                    Text('بنود مضافة: ${sum.updated}'),
-                  ] else ...[
-                    Text('جديد: ${sum.imported}'),
-                    Text('محدّث: ${sum.updated}'),
-                  ],
+                  Text('جديد: ${sum.imported}'),
+                  Text('محدّث: ${sum.updated}'),
                   Text('متخطى: ${sum.skipped}'),
                   if (sum.errors.isNotEmpty) ...[
                     const Divider(),
@@ -661,9 +634,6 @@ class _ImportHubState extends ConsumerState<ImportHubScreen> {
                       const SizedBox(height: 6),
                       const Text(
                           'الأصناف/الموردين/العملاء الصيغة: code | desc — الصف الأول عناوين.'),
-                      const SizedBox(height: 4),
-                      const Text(
-                          'الأذون (استلام/تسليم/مرتجعات) الصيغة: party | date | product | qty — والأعمدة voucher | weight | price اختيارية. الصفوف بنفس رقم الإذن (أو نفس الطرف + التاريخ) تدخل كإذن واحد.'),
                     ]))),
         const SizedBox(height: 8),
         Wrap(spacing: 8, runSpacing: 8, children: [
@@ -681,20 +651,6 @@ class _ImportHubState extends ConsumerState<ImportHubScreen> {
               },
             ),
         ]),
-        if (kind == 'returns') ...[
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            initialValue: returnsKind,
-            decoration:
-                const InputDecoration(labelText: 'نوع المرتجع'),
-            items: const ['مرتجع عميل', 'مرتجع مورد']
-                .map((e) =>
-                    DropdownMenuItem(value: e, child: Text(e)))
-                .toList(),
-            onChanged: (v) =>
-                setState(() => returnsKind = v ?? returnsKind),
-          ),
-        ],
         const SizedBox(height: 8),
         Wrap(spacing: 8, runSpacing: 8, children: [
           ElevatedButton.icon(
@@ -703,22 +659,6 @@ class _ImportHubState extends ConsumerState<ImportHubScreen> {
               label: Text(kind == null
                   ? 'اختر النوع أولًا'
                   : 'ملف ${_labels[kind]}')),
-          OutlinedButton(
-              onPressed: () async {
-                final p = await ref
-                    .read(excelServiceProvider)
-                    .template();
-                if (context.mounted) toast(context, 'تم إنشاء القالب: $p');
-              },
-              child: const Text('قالب أصناف')),
-          OutlinedButton(
-              onPressed: () async {
-                final p = await ref
-                    .read(excelServiceProvider)
-                    .voucherTemplate();
-                if (context.mounted) toast(context, 'تم إنشاء قالب الأذون: $p');
-              },
-              child: const Text('قالب أذون')),
         ]),
         if (fmt != null) ...[
           const SizedBox(height: 8),

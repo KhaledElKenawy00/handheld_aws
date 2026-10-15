@@ -15,6 +15,7 @@ import '../../../core/utils/app_utils.dart';
 import '../../../shared/models/entities.dart';
 import '../../../shared/widgets/common.dart';
 import '../../../shared/widgets/pagination_bar.dart';
+import '../../../shared/widgets/pc_send.dart';
 import '../../products/presentation/products_screen.dart';
 import '../../customers/presentation/customers_screen.dart';
 
@@ -726,6 +727,31 @@ class DeliveryDetailsScreen extends ConsumerWidget {
                         .deliveryPdf(h, items, folder);
                     await Share.shareXFiles([XFile(path)]);
                   }),
+              FilledButton.tonalIcon(
+                  icon: const Icon(Icons.lan_outlined),
+                  label: const Text('كمبيوتر'),
+                  onPressed: () => askAndSendToPc(
+                        context: context,
+                        ref: ref,
+                        makePdf: () async {
+                          final folder = await ref
+                              .read(storageServiceProvider)
+                              .customerDeliveriesDir(h.customerCode,
+                                  h.customerName);
+                          return ref
+                              .read(pdfServiceProvider)
+                              .deliveryPdf(h, items, folder);
+                        },
+                        makeExcel: () async {
+                          final folder = await ref
+                              .read(storageServiceProvider)
+                              .customerDeliveriesDir(h.customerCode,
+                                  h.customerName);
+                          return ref
+                              .read(excelServiceProvider)
+                              .exportDelivery(h, items, folder);
+                        },
+                      )),
             ]),
           ]);
         },

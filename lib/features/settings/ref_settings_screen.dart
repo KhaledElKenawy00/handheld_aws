@@ -4,16 +4,17 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../core/providers.dart';
 import '../../core/theme/ref_style.dart';
+import '../../shared/widgets/pc_send.dart';
 import '../products/presentation/products_screen.dart';
 import 'permissions_screen.dart';
-import 'server_printer_screen.dart';
+import 'pc_export_screen.dart';
 import 'users_screen.dart';
 
 /// الاعدادات — 5 كروت مثل الصورة.
 /// - تصدير قاعدة البيانات → دايلوج بـ 3 اختيارات: شامل PDF / شامل Excel /
 ///   نسخة كاملة (.sanad) للباك اب.
-/// - استيراد قاعدة البيانات → مركز الاستيراد (أصناف/موردين/عملاء/
-///   أذون استلام/أذون تسليم/مرتجعات من شيت Excel).
+/// - استيراد قاعدة البيانات → مركز الاستيراد (أصناف/موردين/عملاء
+///   من شيت Excel).
 class RefSettingsScreen extends ConsumerStatefulWidget {
   const RefSettingsScreen({super.key});
   @override
@@ -33,7 +34,7 @@ class _RefSettingsState extends ConsumerState<RefSettingsScreen> {
         children: [
           _card(context, 'ادارة المستخدمين', Icons.groups_rounded, const UsersScreen()),
           _card(context, 'تصريحات المستخدم', Icons.edit_document, const PermissionsScreen()),
-          _card(context, 'إعداد الخادم والطابعة', Icons.edit_document, const ServerPrinterScreen()),
+          _card(context, 'الإرسال للكمبيوتر', Icons.lan_outlined, const PcExportScreen()),
           _card(context, 'تصدير قاعدة البيانات', Icons.save_alt_rounded, null,
               onTap: busy ? null : _exportChoice),
           _card(context, 'استيراد قاعدة البيانات', Icons.add_rounded, null,
@@ -176,6 +177,17 @@ class _RefSettingsState extends ConsumerState<RefSettingsScreen> {
   }
 
   Future<void> _runExportPdf() async {
+    if (await askPcOrDevice(context)) {
+      if (!mounted) return;
+      await generateAndSendToPc(
+        context: context,
+        ref: ref,
+        generate: () =>
+            ref.read(fullExportServiceProvider).exportAllPdf(),
+      );
+      return;
+    }
+    if (!mounted) return;
     setState(() {
       busy = true;
       step = 'جارٍ تجهيز ملفات PDF...';
@@ -204,6 +216,17 @@ class _RefSettingsState extends ConsumerState<RefSettingsScreen> {
   }
 
   Future<void> _runExportExcel() async {
+    if (await askPcOrDevice(context)) {
+      if (!mounted) return;
+      await generateAndSendToPc(
+        context: context,
+        ref: ref,
+        generate: () =>
+            ref.read(fullExportServiceProvider).exportAllExcel(),
+      );
+      return;
+    }
+    if (!mounted) return;
     setState(() {
       busy = true;
       step = 'جارٍ تجهيز ملفات Excel...';
@@ -232,6 +255,17 @@ class _RefSettingsState extends ConsumerState<RefSettingsScreen> {
   }
 
   Future<void> _runBackup() async {
+    if (await askPcOrDevice(context)) {
+      if (!mounted) return;
+      await generateAndSendToPc(
+        context: context,
+        ref: ref,
+        generate: () =>
+            ref.read(backupServiceProvider).createBackup(),
+      );
+      return;
+    }
+    if (!mounted) return;
     setState(() {
       busy = true;
       step = 'جارٍ إنشاء نسخة النظام...';

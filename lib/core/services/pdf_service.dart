@@ -36,6 +36,8 @@ class PdfService {
   }
 
   pw.Widget _header(String titleAr, String sub) {
+    // العنوان بترتيبه الطبيعي (كان ar() يعكسه فيظهر "عميل ملف"
+    // بدل "ملف عميل") — يُرسم RTL عبر textDirection.
     return pw.Container(
       padding: const pw.EdgeInsets.only(bottom: 8),
       decoration: const pw.BoxDecoration(
@@ -50,13 +52,13 @@ class PdfService {
                 pw.Text('SANAD',
                     style: pw.TextStyle(
                         font: _arBold, fontSize: 22)),
-                pw.Text(ar('سند لإدارة المخازن'),
+                pw.Text('سند لإدارة المخازن',
                     style: pw.TextStyle(font: _arFont, fontSize: 11)),
               ]),
           pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.end,
               children: [
-                pw.Text(ar(titleAr),
+                pw.Text(titleAr,
                     style: pw.TextStyle(
                         font: _arBold, fontSize: 18)),
                 pw.Text(sub, style: const pw.TextStyle(fontSize: 10)),
@@ -484,6 +486,45 @@ class PdfService {
               .toList(),
           folder, 'inventory_sessions.pdf');
 
+  /// تجميع بنود إذن خام (كل مسحة صف) إلى صف واحد لكل صنف
+  /// (كمية/وزن مجموع + أحدث سعر) — لجداول الدوسيهات (إجمالي لا تفصيلي).
+  List<List<String>> _mergedDossierRows(
+      List<({String code, String name, double qty, double weight, double price})>
+          items) {
+    final order = <String>[];
+    final map = <String,
+        ({String name, double qty, double weight, double price})>{};
+    for (final it in items) {
+      final g = map[it.code];
+      if (g == null) {
+        map[it.code] = (
+          name: it.name,
+          qty: it.qty,
+          weight: it.weight,
+          price: it.price
+        );
+        order.add(it.code);
+      } else {
+        map[it.code] = (
+          name: it.name.isNotEmpty ? it.name : g.name,
+          qty: g.qty + it.qty,
+          weight: g.weight + it.weight,
+          price: it.price != 0 ? it.price : g.price,
+        );
+      }
+    }
+    return [
+      for (final c in order)
+        [
+          c,
+          map[c]!.name,
+          AppUtils.fmtQty(map[c]!.qty),
+          _f3(map[c]!.weight),
+          map[c]!.price.toString(),
+        ],
+    ];
+  }
+
   /// ملف المورد الشامل: بياناته + كل أذون الاستلام بتفاصيل الأصناف
   Future<String> supplierDossierPdf(
     Supplier s,
@@ -503,18 +544,18 @@ class PdfService {
       footer: _footer,
       build: (_) => [
         pw.SizedBox(height: 8),
-        pw.Text(ar('اسم المورد:'),
+        pw.Text('اسم المورد:',
             style: pw.TextStyle(font: _arBold, fontSize: 14)),
-        pw.Text(ar(s.desc),
+        pw.Text(s.desc,
             style: pw.TextStyle(font: _arBold, fontSize: 18)),
         _infoRow('الكود:', s.code),
         pw.SizedBox(height: 6),
         pw.Text(
-            '${ar('عدد الأذون')}: ${headers.length} | ${ar('إجمالي الكميات')}: ${AppUtils.fmtQty(totalQty)}',
+            'عدد الأذون: ${headers.length} | إجمالي الكميات: ${AppUtils.fmtQty(totalQty)}',
             style: pw.TextStyle(font: _arBold, fontSize: 12)),
         pw.SizedBox(height: 10),
         if (headers.isEmpty)
-          pw.Text(ar('لا توجد أذون لهذا المورد'),
+          pw.Text('لا توجد أذون لهذا المورد',
               style: pw.TextStyle(font: _arFont, fontSize: 12)),
         for (final h in headers) ...[
           pw.SizedBox(height: 8),
@@ -525,19 +566,23 @@ class PdfService {
                 borderRadius:
                     const pw.BorderRadius.all(pw.Radius.circular(6))),
             child: pw.Text(
-                '${h.id} | ${h.date} | ${ar('أصناف')}: ${h.totalItems} | ${ar('كمية')}: ${AppUtils.fmtQty(h.totalQty)}',
+                '${h.id} | ${h.date} | ${ar('أصناف')}: ${h.totalItems} | ${ar('كمية')}: ${AppUtils.fmtQty(h.totalQty)} | ${ar('وزن')}: ${_f3(h.totalWeight)}',
                 style: pw.TextStyle(font: _arBold, fontSize: 11)),
           ),
           pw.SizedBox(height: 4),
           _table(
-            ['Code', ar('الوصف'), ar('الكمية')],
-            (itemsByReceipt[h.id] ?? const <ReceiptItem>[])
-                .map((e) => [
-                      e.productCode,
-                      ar(e.productName),
-                      AppUtils.fmtQty(e.quantity)
-                    ])
-                .toList(),
+            ['Code', ar('الوصف'), ar('الكمية'), ar('الوزن'), ar('السعر')],
+            _mergedDossierRows([
+              for (final e in (itemsByReceipt[h.id] ??
+                  const <ReceiptItem>[]))
+                (
+                  code: e.productCode,
+                  name: e.productName,
+                  qty: e.quantity,
+                  weight: e.weight,
+                  price: e.price
+                ),
+            ]),
           ),
         ],
       ],
@@ -564,18 +609,18 @@ class PdfService {
       footer: _footer,
       build: (_) => [
         pw.SizedBox(height: 8),
-        pw.Text(ar('اسم العميل:'),
+        pw.Text('اسم العميل:',
             style: pw.TextStyle(font: _arBold, fontSize: 14)),
-        pw.Text(ar(c.desc),
+        pw.Text(c.desc,
             style: pw.TextStyle(font: _arBold, fontSize: 18)),
         _infoRow('الكود:', c.code),
         pw.SizedBox(height: 6),
         pw.Text(
-            '${ar('عدد الأذون')}: ${headers.length} | ${ar('إجمالي الكميات')}: ${AppUtils.fmtQty(totalQty)}',
+            'عدد الأذون: ${headers.length} | إجمالي الكميات: ${AppUtils.fmtQty(totalQty)}',
             style: pw.TextStyle(font: _arBold, fontSize: 12)),
         pw.SizedBox(height: 10),
         if (headers.isEmpty)
-          pw.Text(ar('لا توجد أذون لهذا العميل'),
+          pw.Text('لا توجد أذون لهذا العميل',
               style: pw.TextStyle(font: _arFont, fontSize: 12)),
         for (final h in headers) ...[
           pw.SizedBox(height: 8),
@@ -586,19 +631,23 @@ class PdfService {
                 borderRadius:
                     const pw.BorderRadius.all(pw.Radius.circular(6))),
             child: pw.Text(
-                '${h.id} | ${h.date} | ${ar('أصناف')}: ${h.totalItems} | ${ar('كمية')}: ${AppUtils.fmtQty(h.totalQty)}',
+                '${h.id} | ${h.date} | ${ar('أصناف')}: ${h.totalItems} | ${ar('كمية')}: ${AppUtils.fmtQty(h.totalQty)} | ${ar('وزن')}: ${_f3(h.totalWeight)}',
                 style: pw.TextStyle(font: _arBold, fontSize: 11)),
           ),
           pw.SizedBox(height: 4),
           _table(
-            ['Code', ar('الوصف'), ar('الكمية')],
-            (itemsByDelivery[h.id] ?? const <DeliveryItem>[])
-                .map((e) => [
-                      e.productCode,
-                      ar(e.productName),
-                      AppUtils.fmtQty(e.quantity)
-                    ])
-                .toList(),
+            ['Code', ar('الوصف'), ar('الكمية'), ar('الوزن'), ar('السعر')],
+            _mergedDossierRows([
+              for (final e in (itemsByDelivery[h.id] ??
+                  const <DeliveryItem>[]))
+                (
+                  code: e.productCode,
+                  name: e.productName,
+                  qty: e.quantity,
+                  weight: e.weight,
+                  price: e.price
+                ),
+            ]),
           ),
         ],
       ],

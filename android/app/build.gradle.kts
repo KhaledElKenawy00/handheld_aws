@@ -24,7 +24,8 @@ android {
         applicationId = "com.example.sanad"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // 24 كحد أدنى (مطلوب لمكتبة مشاركة الشبكة SMB).
+        minSdk = 24
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

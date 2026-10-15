@@ -15,6 +15,7 @@ import '../../../core/utils/app_utils.dart';
 import '../../../shared/models/entities.dart';
 import '../../../shared/widgets/common.dart';
 import '../../../shared/widgets/pagination_bar.dart';
+import '../../../shared/widgets/pc_send.dart';
 import '../../products/presentation/products_screen.dart';
 import '../../suppliers/presentation/suppliers_screen.dart';
 
@@ -777,6 +778,31 @@ class ReceiptDetailsScreen extends ConsumerWidget {
                       if (context.mounted) showError(context, e);
                     }
                   }),
+              FilledButton.tonalIcon(
+                  icon: const Icon(Icons.lan_outlined),
+                  label: const Text('كمبيوتر'),
+                  onPressed: () => askAndSendToPc(
+                        context: context,
+                        ref: ref,
+                        makePdf: () async {
+                          final folder = await ref
+                              .read(storageServiceProvider)
+                              .supplierReceiptsDir(h.supplierCode,
+                                  h.supplierName);
+                          return ref
+                              .read(pdfServiceProvider)
+                              .receiptPdf(h, items, folder);
+                        },
+                        makeExcel: () async {
+                          final folder = await ref
+                              .read(storageServiceProvider)
+                              .supplierReceiptsDir(h.supplierCode,
+                                  h.supplierName);
+                          return ref
+                              .read(excelServiceProvider)
+                              .exportReceipt(h, items, folder);
+                        },
+                      )),
             ]),
           ]);
         },

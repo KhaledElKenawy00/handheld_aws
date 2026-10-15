@@ -42,4 +42,13 @@ class AppConstants {
   static const String kScannerBeep = 'scanner_beep';
   static const String kScannerVibrate = 'scanner_vibrate';
   static const String kScannerDebounce = 'scanner_debounce_ms';
+  // الإرسال للكمبيوتر عبر الشبكة المحلية (SMB)
+  static const String kPcHost = 'pc_host';
+  static const String kPcShare = 'pc_share';
+  static const String kPcUser = 'pc_user';
+  static const String kPcPass = 'pc_pass';
+  static const String kPcFolder = 'pc_folder';
+  // الأرشفة الأسبوعية التلقائية للكمبيوتر
+  static const String kLastAutoArchive = 'last_auto_archive';
+  static const int autoArchiveEveryDays = 7;
 }
