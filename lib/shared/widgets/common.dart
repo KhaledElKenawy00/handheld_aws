@@ -586,6 +586,9 @@ class LinesCellTable extends StatelessWidget {
   final void Function(int index, double value)? onQtyChanged;
   final void Function(int index, double value)? onWeightChanged;
   final void Function(int index, double value)? onPriceChanged;
+  /// يُستدعى عند التقاط مسحة باركود ضلّت طريقها لخلية رقمية (الماسح
+  /// بوضع wedge يكتب في الحقل المركّز). يُرجع true لو استُهلكت كمسحة.
+  final Future<bool> Function(String code)? onScanRedirect;
   final bool showPrice;
   final bool editable;
   const LinesCellTable({
@@ -596,6 +599,7 @@ class LinesCellTable extends StatelessWidget {
     this.onQtyChanged,
     this.onWeightChanged,
     this.onPriceChanged,
+    this.onScanRedirect,
     this.showPrice = true,
     this.editable = true,
   });
@@ -710,6 +714,7 @@ class LinesCellTable extends StatelessWidget {
                     initial: _f(r.qty),
                     editable: editable && onQtyChanged != null,
                     onSubmit: (v) => onQtyChanged?.call(i, v),
+                    onScanRedirect: onScanRedirect,
                   )),
               // خلية الوزن
               Expanded(
@@ -719,6 +724,7 @@ class LinesCellTable extends StatelessWidget {
                     initial: _f2(r.weight),
                     editable: editable && onWeightChanged != null,
                     onSubmit: (v) => onWeightChanged?.call(i, v),
+                    onScanRedirect: onScanRedirect,
                   )),
               // خلية السعر
               if (showPrice)
@@ -729,6 +735,7 @@ class LinesCellTable extends StatelessWidget {
                       initial: _f(r.price),
                       editable: editable && onPriceChanged != null,
                       onSubmit: (v) => onPriceChanged?.call(i, v),
+                      onScanRedirect: onScanRedirect,
                     )),
               if (onEdit != null)
                 SizedBox(
@@ -761,15 +768,20 @@ class LinesCellTable extends StatelessWidget {
 }
 
 /// خلية رقمية قابلة للتحرير المباشر داخل الجدول.
+/// - مع حراسة المسحات الضالة: الماسح بوضع wedge يكتب في الحقل المركّز،
+///   فلو دخلت دفعة سريعة بمواصفات باركود (≥4 محارف بمتوسط <50ms) تُعاد
+///   عبر [onScanRedirect] بدل حفظها كرقم. الكتابة اليدوية لا تتأثر.
 class _NumCell extends StatefulWidget {
   final String initial;
   final bool editable;
   final ValueChanged<double> onSubmit;
+  final Future<bool> Function(String code)? onScanRedirect;
   const _NumCell(
       {super.key,
       required this.initial,
       required this.editable,
-      required this.onSubmit});
+      required this.onSubmit,
+      this.onScanRedirect});
   @override
   State<_NumCell> createState() => _NumCellState();
 }
@@ -777,10 +789,78 @@ class _NumCell extends StatefulWidget {
 class _NumCellState extends State<_NumCell> {
   late final TextEditingController c =
       TextEditingController(text: widget.initial);
+  String _prev = '';
+  DateTime _burstStart = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _lastChange = DateTime.fromMillisecondsSinceEpoch(0);
+  Timer? _settleT;
+  bool _redirecting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _prev = widget.initial;
+  }
+
   @override
   void dispose() {
+    _settleT?.cancel();
     c.dispose();
     super.dispose();
+  }
+
+  void _onChanged(String text) {
+    if (_redirecting) return;
+    final now = DateTime.now();
+    if (text.length < _prev.length) {
+      // حذف يدوي — بداية جديدة وليست مسحة.
+      _prev = text;
+      _burstStart = now;
+      _lastChange = now;
+      _settleT?.cancel();
+      return;
+    }
+    if (now.difference(_lastChange).inMilliseconds > 120) {
+      _burstStart = now;
+    }
+    _prev = text;
+    _lastChange = now;
+    _settleT?.cancel();
+    if (widget.onScanRedirect == null || text.trim().length < 4) return;
+    _settleT = Timer(const Duration(milliseconds: 250), _fireSettle);
+  }
+
+  /// هل النص الحالي دفعة ماسح (سريعة وطويلة) أم كتابة يدوية؟
+  bool _isScanBurst(String text) {
+    final t = text.trim();
+    if (t.length < 4) return false;
+    final ms = _lastChange.difference(_burstStart).inMilliseconds;
+    return ms < t.length * 50;
+  }
+
+  Future<bool> _tryRedirect(String text) async {
+    final h = widget.onScanRedirect;
+    if (h == null || !_isScanBurst(text)) return false;
+    _redirecting = true;
+    bool consumed = false;
+    try {
+      consumed = await h(text);
+    } catch (_) {
+      consumed = false;
+    }
+    _redirecting = false;
+    if (!mounted) return true;
+    if (consumed) {
+      c.text = widget.initial;
+      _prev = widget.initial;
+      final now = DateTime.now();
+      _burstStart = now;
+      _lastChange = now;
+    }
+    return consumed;
+  }
+
+  void _fireSettle() {
+    _tryRedirect(c.text);
   }
 
   @override
@@ -828,7 +908,13 @@ class _NumCellState extends State<_NumCell> {
         inputFormatters: [
           FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
         ],
-        onSubmitted: (v) {
+        onChanged: _onChanged,
+        onSubmitted: (v) async {
+          _settleT?.cancel();
+          if (_redirecting) return;
+          // wedge غالبًا يختم بـ Enter: لو النص دفعة ماسح أعد توجيهه أولًا.
+          if (await _tryRedirect(v)) return;
+          if (!mounted) return;
           final n = double.tryParse(v.trim()) ?? -1;
           if (n < 0) {
             c.text = widget.initial;

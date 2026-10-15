@@ -303,6 +303,49 @@ class _CR extends ConsumerState<CreateReceiptScreen> {
     if (mounted) setState(() {});
   }
 
+  /// هل النص يحل لصنف معروف؟ (فحص قبل نقل مسحة ضالة من خلية رقمية).
+  Future<bool> _resolvesToProduct(String code) async {
+    final c = BarcodeParser.clean(code);
+    if (c.length < 4) return false;
+    try {
+      final pc =
+          await ref.read(productCodeRepoProvider).findByBarcode(c);
+      if (pc != null) return true;
+    } catch (_) {}
+    try {
+      final p = await ref.read(productRepoProvider).findByBarcode(c);
+      if (p != null) return true;
+    } catch (_) {}
+    try {
+      final seg = await ref
+          .read(productCodeRepoProvider)
+          .resolveByCodeSegment(c);
+      if (seg != null) return true;
+    } catch (_) {}
+    try {
+      final ts = await ref.read(productCodeRepoProvider).all();
+      for (final t in ts) {
+        if (t.wStart <= 0 || t.wEnd <= 0) continue;
+        if (BarcodeResolver.matchesTemplate(c, t)) return true;
+      }
+    } catch (_) {}
+    try {
+      final p = await ref.read(productRepoProvider).findByCode(c);
+      if (p != null) return true;
+    } catch (_) {}
+    return false;
+  }
+
+  /// مسحة ضلّت لخلية رقمية (الماسح wedge يكتب في الحقل المركّز) —
+  /// تُعالج كمسحة عادية بدل حفظها كرقم.
+  Future<bool> _handleCellScan(String text) async {
+    final code = BarcodeParser.clean(text);
+    if (code.length < 4 || !mounted) return false;
+    if (!await _resolvesToProduct(code)) return false;
+    await _addCode(code);
+    return true;
+  }
+
   Future<void> _handleNotFound(String code) async {
     final wantAdd = await productNotFoundDialog(context, code);
     if (wantAdd && mounted) {
@@ -424,12 +467,14 @@ class _CR extends ConsumerState<CreateReceiptScreen> {
                       price: g.price),
               ],
               // نفس الصنف مدمج في صف واحد — والتعديل يعرض كل مسحة في صف.
+              // أي مسحة تضل لخلية رقمية تُعالج كمسحة بدل حفظها كرقم.
               onQtyChanged: (i, v) =>
                   _quickUpdateGrouped(gs, i, v, 'qty'),
               onWeightChanged: (i, v) =>
                   _quickUpdateGrouped(gs, i, v, 'weight'),
               onPriceChanged: (i, v) =>
                   _quickUpdateGrouped(gs, i, v, 'price'),
+              onScanRedirect: _handleCellScan,
               onEdit: (i) => _editGrouped(gs[i]),
               onDelete: (i) =>
                   setState(() => lines.removeWhere((e) =>

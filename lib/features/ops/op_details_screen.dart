@@ -108,6 +108,17 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
   Timer? _priceAutoT;
   bool _resolving = false; // حلّ جارٍ — تجاهل تغيرات السعر البرمجية
   bool priceError = false; // السعر مطلوب (نقدي بلا سعر) — يُعرض بالأحمر
+  // ── حراسة المسحات الضالة: الماسح بوضع wedge يكتب في الحقل المركّز،
+  // فلو ضغط اليوزر المسح وهو واقف على حقل السعر/الوزن، الدفعة السريعة
+  // بمواصفات باركود تُنقل لحقل الباركود بدل ما تتحفظ كسعر/وزن.
+  String _prevPriceText = '';
+  DateTime _priceBurstStart = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _priceLastChange = DateTime.fromMillisecondsSinceEpoch(0);
+  Timer? _priceScanT;
+  String _prevWeightText = '';
+  DateTime _weightBurstStart = DateTime.fromMillisecondsSinceEpoch(0);
+  DateTime _weightLastChange = DateTime.fromMillisecondsSinceEpoch(0);
+  Timer? _weightScanT;
   // آخر كود عولج وتوقيته — لمنع إضافة المسحة الواحدة مرتين عند وصولها
   // من مسارين (بث + كتابة + Enter) معًا. النافذة 400ms فقط حتى لا تلتهم
   // الضغطات السريعة المتتالية لنفس الصنف (كل ضغطة بعدها تُسجل).
@@ -123,6 +134,7 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
     _load();
     barcodeC.addListener(_onBarcodeChanged);
     priceC.addListener(_onPriceChanged);
+    weightC.addListener(_onWeightChanged);
     // تركيز تلقائي على الباركود لاستقبال زر المسح الفيزيائي (wedge) فورًا.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) barcodeFocus.requestFocus();
@@ -237,8 +249,11 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
     scanSub?.cancel();
     _autoT?.cancel();
     _priceAutoT?.cancel();
+    _priceScanT?.cancel();
+    _weightScanT?.cancel();
     barcodeC.removeListener(_onBarcodeChanged);
     priceC.removeListener(_onPriceChanged);
+    weightC.removeListener(_onWeightChanged);
     barcodeC.dispose();
     barcodeFocus.dispose();
     priceC.dispose();
@@ -345,7 +360,17 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
   /// كتابة السعر في النقدي مع صنف معلّق (من مسحة بلا سعر أو اختيار يدوي)
   /// تُضيف الصنف تلقائيًا بعد توقف قصير — بدون الضغط على "أضف".
   void _onPriceChanged() {
-    if (_resolving || !mounted || !cash) return;
+    // حراسة المسحة الضالة أولًا (شغالة نقدي وغير نقدي).
+    if (_resolving) {
+      _prevPriceText = priceC.text;
+      final now = DateTime.now();
+      _priceBurstStart = now;
+      _priceLastChange = now;
+      return;
+    }
+    if (!mounted) return;
+    _trackFieldBurst(priceC.text, true);
+    if (!cash) return;
     if (productCode == null) return;
     if (AppUtils.parseNum(priceC.text) <= 0) return;
     // سعر صحيح دخل — أطفئ علامة الخطأ الحمراء.
@@ -356,6 +381,153 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
       if (AppUtils.parseNum(priceC.text) <= 0) return;
       _add();
     });
+  }
+
+  /// تغير حقل الوزن: القيمة تُقرأ لحظة الإضافة — هنا فقط حراسة المسحة الضالة.
+  void _onWeightChanged() {
+    if (_resolving) {
+      _prevWeightText = weightC.text;
+      final now = DateTime.now();
+      _weightBurstStart = now;
+      _weightLastChange = now;
+      return;
+    }
+    if (!mounted) return;
+    _trackFieldBurst(weightC.text, false);
+  }
+
+  /// تتبع سرعة الكتابة في حقلي السعر/الوزن: الدفعة السريعة بمواصفات
+  /// باركود (≥4 محارف بمتوسط <50ms) تُمهل 250ms ثم تُفحص للنقل.
+  /// الكتابة اليدوية البطيئة والحذف لا يُلتقطان أبدًا.
+  void _trackFieldBurst(String text, bool isPrice) {
+    final now = DateTime.now();
+    if (isPrice) {
+      if (text.length < _prevPriceText.length) {
+        _prevPriceText = text;
+        _priceBurstStart = now;
+        _priceLastChange = now;
+        _priceScanT?.cancel();
+        return;
+      }
+      if (now.difference(_priceLastChange).inMilliseconds > 120) {
+        _priceBurstStart = now;
+      }
+      _prevPriceText = text;
+      _priceLastChange = now;
+      _priceScanT?.cancel();
+      if (text.trim().length < 4) return;
+      _priceScanT = Timer(
+          const Duration(milliseconds: 250), () => _fireFieldScan(true));
+    } else {
+      if (text.length < _prevWeightText.length) {
+        _prevWeightText = text;
+        _weightBurstStart = now;
+        _weightLastChange = now;
+        _weightScanT?.cancel();
+        return;
+      }
+      if (now.difference(_weightLastChange).inMilliseconds > 120) {
+        _weightBurstStart = now;
+      }
+      _prevWeightText = text;
+      _weightLastChange = now;
+      _weightScanT?.cancel();
+      if (text.trim().length < 4) return;
+      _weightScanT = Timer(
+          const Duration(milliseconds: 250), () => _fireFieldScan(false));
+    }
+  }
+
+  void _fireFieldScan(bool isPrice) {
+    if (!mounted) return;
+    final text = isPrice ? priceC.text : weightC.text;
+    final t = text.trim();
+    if (t.length < 4) return;
+    final ms = (isPrice ? _priceLastChange : _weightLastChange)
+        .difference(isPrice ? _priceBurstStart : _weightBurstStart)
+        .inMilliseconds;
+    if (ms >= t.length * 50) return; // سرعة يدوية — سعر/وزن حقيقي
+    _redirectFieldScan(t, isPrice);
+  }
+
+  /// هل النص يحل لصنف معروف؟ (فحص قبل النقل حتى لا تضيع كتابة يدوية
+  /// سريعة لا تمثل باركود — تبقى كسعر/وزن كما هي).
+  Future<bool> _resolvesToProduct(String code) async {
+    final c = BarcodeParser.clean(code);
+    if (c.length < 4) return false;
+    try {
+      final pc =
+          await ref.read(productCodeRepoProvider).findByBarcode(c);
+      if (pc != null) return true;
+    } catch (_) {}
+    try {
+      final p = await ref.read(productRepoProvider).findByBarcode(c);
+      if (p != null) return true;
+    } catch (_) {}
+    try {
+      final seg = await ref
+          .read(productCodeRepoProvider)
+          .resolveByCodeSegment(c);
+      if (seg != null) return true;
+    } catch (_) {}
+    try {
+      final ts = await ref.read(productCodeRepoProvider).all();
+      for (final t in ts) {
+        if (t.wStart <= 0 || t.wEnd <= 0) continue;
+        if (BarcodeResolver.matchesTemplate(c, t)) return true;
+      }
+    } catch (_) {}
+    try {
+      final p = await ref.read(productRepoProvider).findByCode(c);
+      if (p != null) return true;
+    } catch (_) {}
+    return false;
+  }
+
+  /// نقل مسحة ضالة من حقل السعر/الوزن إلى مكانها (حقل الباركود).
+  Future<void> _redirectFieldScan(String text, bool isPrice) async {
+    final code = BarcodeParser.clean(text);
+    if (code.length < 4 || !mounted) return;
+    if (!await _resolvesToProduct(code)) return; // كتابة يدوية — تُترك
+    if (!mounted) return;
+    // ألغِ أي إضافة تلقائية معلقة بالسعر قبل مسح الحقل.
+    _priceAutoT?.cancel();
+    _priceScanT?.cancel();
+    _weightScanT?.cancel();
+    _resolving = true;
+    try {
+      if (isPrice) {
+        priceC.clear();
+        _prevPriceText = '';
+        final now = DateTime.now();
+        _priceBurstStart = now;
+        _priceLastChange = now;
+      } else {
+        weightC.clear();
+        _prevWeightText = '';
+        final now = DateTime.now();
+        _weightBurstStart = now;
+        _weightLastChange = now;
+      }
+    } finally {
+      _resolving = false;
+    }
+    if (!mounted) return;
+    try {
+      barcodeFocus.requestFocus();
+    } catch (_) {}
+    _lastHandled = '';
+    if (mounted) refToast(context, 'نُقلت المسحة إلى حقل الباركود');
+    _onScanAuto(code);
+  }
+
+  /// معالج المسحات الضالة القادمة من خلايا الجدول.
+  Future<bool> _handleCellScan(String text) async {
+    final code = BarcodeParser.clean(text);
+    if (code.length < 4 || !mounted) return false;
+    if (!await _resolvesToProduct(code)) return false;
+    _onScanAuto(code);
+    return true;
   }
 
   /// حوار تنبيه يعيد التركيز لحقل الباركود بعد الإغلاق
@@ -1153,10 +1325,12 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
                   ],
                   // نفس الصنف مدمج في صف واحد — الخلايا تحدّث الإجمالي،
                   // والتعديل يعرض كل مسحة في صف مستقل.
+                  // أي مسحة تضل لحقل خلية تُعاد للباركود بدل حفظها كرقم.
                   onQtyChanged: (i, v) => _quickUpdateGrouped(i, qty: v),
                   onWeightChanged: (i, v) =>
                       _quickUpdateGrouped(i, weight: v),
                   onPriceChanged: (i, v) => _quickUpdateGrouped(i, price: v),
+                  onScanRedirect: _handleCellScan,
                   onEdit: (i) => _editGrouped(gs[i]),
                   onDelete: (i) => _deleteGrouped(gs[i]),
                 ),

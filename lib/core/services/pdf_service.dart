@@ -74,74 +74,218 @@ class PdfService {
             style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
       );
 
-  Future<String> receiptPdf(
-      ReceiptHeader h, List<ReceiptItem> items, String folderPath) async {
+  // ---------- تنسيقات الطباعة الموحدة (نفس شكل صورة الأوردر) ----------
+  /// 3 أرقام عشرية للإجماليات (31.000).
+  String _f3(double v) => v.toStringAsFixed(3);
+
+  /// الكمية بدون كسور لو صحيحة (5).
+  String _fq(double v) => AppUtils.fmtQty(v);
+
+  pw.Widget _ocell(String s, {bool bold = false}) => pw.Padding(
+        padding: const pw.EdgeInsets.all(4),
+        child: pw.Text(s,
+            style: pw.TextStyle(
+                font: bold ? _arBold : _arFont, fontSize: 10),
+            textAlign: pw.TextAlign.center),
+      );
+
+  /// طباعة أوردر موحدة بنفس شكل الصورة تمامًا:
+  /// ترويسة 3×3 (رقم/نوع/تاريخ — كود/اسم الطرف/إجمالي القيمة —
+  /// إجمالي الكمية/إجمالي الوزن/المستخدم) + جدول (م/الصنف/الكمية/
+  /// الوزن/السعر/القيمة) بترتيب: أولًا صف مدمج لكل صنف (كل الأصناف
+  /// بكمياتها)، ثم تفصيلة كل صنف (صف عنوان + صف لكل مسحة بوزنها
+  /// تحت عمود الصنف)، ثم صف المجموع (إجمالي الوزن + المجموع).
+  /// النص العربي بترتيبه الطبيعي ويُرسم RTL عبر textDirection
+  /// (بدون عكس كلمات).
+  Future<String> orderPdf({
+    required String kindLabel,
+    required String partyKindLabel,
+    required String num,
+    required String date,
+    required String partyCode,
+    required String partyName,
+    required String byUser,
+    required double totalPrice,
+    required double totalQty,
+    required double totalWeight,
+    required List<DocLine> rawItems,
+    required String folderPath,
+    required String fileName,
+  }) async {
     await _loadFonts();
+    // تجميع بنفس ترتيب الظهور.
+    final order = <String>[];
+    final groups = <String, List<DocLine>>{};
+    for (final it in rawItems) {
+      if (!groups.containsKey(it.productCode)) {
+        groups[it.productCode] = [];
+        order.add(it.productCode);
+      }
+      groups[it.productCode]!.add(it);
+    }
     final doc = pw.Document();
     doc.addPage(pw.MultiPage(
       pageFormat: PdfPageFormat.a4,
       textDirection: pw.TextDirection.rtl,
       theme: pw.ThemeData.withFont(base: _arFont!, bold: _arBold!),
-      header: (_) => _header('إذن استلام', h.id),
-      footer: _footer,
       build: (_) => [
-        pw.SizedBox(height: 8),
-        _infoRow('رقم الإذن:', h.id),
-        _infoRow('التاريخ:', h.date),
-        _infoRow('المورد:', '${ar(h.supplierName)} (${h.supplierCode})'),
-        pw.SizedBox(height: 10),
-        _table(
-          ['Code', ar('الوصف'), ar('الكمية')],
-          items
-              .map((e) => [
-                    e.productCode,
-                    ar(e.productName),
-                    AppUtils.fmtQty(e.quantity)
-                  ])
-              .toList(),
+        pw.Table(
+          border: pw.TableBorder.all(),
+          children: [
+            pw.TableRow(children: [
+              _ocell('$date : تاريخ الاذن'),
+              _ocell('$kindLabel : نوع الاذن'),
+              _ocell('$num : رقم الاذن'),
+            ]),
+            pw.TableRow(children: [
+              _ocell('${_f3(totalPrice)} : اجمالي القيمة'),
+              _ocell('$partyName : اسم ال$partyKindLabel'),
+              _ocell('$partyCode : كود ال$partyKindLabel'),
+            ]),
+            pw.TableRow(children: [
+              _ocell('$byUser : اسم المستخدم'),
+              _ocell('${_f3(totalWeight)} : اجمالي الوزن'),
+              _ocell('${_fq(totalQty)} : اجمالي الكمية'),
+            ]),
+          ],
         ),
-        pw.SizedBox(height: 10),
-        pw.Text(
-            '${ar('إجمالي الأصناف')}: ${items.length} | ${ar('إجمالي الكميات')}: ${AppUtils.fmtQty(items.fold(0.0, (a, b) => a + b.quantity))}',
-            style: pw.TextStyle(font: _arBold, fontSize: 12)),
+        pw.SizedBox(height: 8),
+        pw.Table(
+          border: pw.TableBorder.all(),
+          children: [
+            pw.TableRow(children: [
+              _ocell('القيمة الإجمالية', bold: true),
+              _ocell('السعر', bold: true),
+              _ocell('الوزن', bold: true),
+              _ocell('الكمية', bold: true),
+              _ocell('الصنف', bold: true),
+              _ocell('م', bold: true),
+            ]),
+            // القسم الأول: صف مدمج لكل صنف (كل الأصناف بكمياتها).
+            for (var gi = 0; gi < order.length; gi++)
+              _mergedRow(order[gi], groups[order[gi]]!, gi + 1),
+            // القسم الثاني: تفصيلة كل صنف — صف عنوان (الصنف + اسمه)
+            // ثم صف لكل مسحة (وزنها تحت عمود الصنف + رقمها).
+            for (var gi = 0; gi < order.length; gi++)
+              ..._detailRows(order[gi], groups[order[gi]]!),
+            // صف المجموع: إجمالي الوزن + المجموع (باقي الخلايا فاضية).
+            pw.TableRow(children: [
+              _ocell(''),
+              _ocell(''),
+              _ocell(''),
+              _ocell(''),
+              _ocell(_f3(totalWeight)),
+              _ocell('المجموع', bold: true),
+            ]),
+          ],
+        ),
       ],
     ));
-    return _save(doc, folderPath, '${h.id}.pdf');
+    return _save(doc, folderPath, fileName);
   }
 
-  Future<String> deliveryPdf(
-      DeliveryHeader h, List<DeliveryItem> items, String folderPath) async {
-    await _loadFonts();
-    final doc = pw.Document();
-    doc.addPage(pw.MultiPage(
-      pageFormat: PdfPageFormat.a4,
-      textDirection: pw.TextDirection.rtl,
-      theme: pw.ThemeData.withFont(base: _arFont!, bold: _arBold!),
-      header: (_) => _header('إذن تسليم', h.id),
-      footer: _footer,
-      build: (_) => [
-        pw.SizedBox(height: 8),
-        _infoRow('رقم الإذن:', h.id),
-        _infoRow('التاريخ:', h.date),
-        _infoRow('العميل:', '${ar(h.customerName)} (${h.customerCode})'),
-        pw.SizedBox(height: 10),
-        _table(
-          ['Code', ar('الوصف'), ar('الكمية')],
-          items
-              .map((e) => [
-                    e.productCode,
-                    ar(e.productName),
-                    AppUtils.fmtQty(e.quantity)
-                  ])
-              .toList(),
-        ),
-        pw.SizedBox(height: 10),
-        pw.Text(
-            '${ar('إجمالي الأصناف')}: ${items.length} | ${ar('إجمالي الكميات')}: ${AppUtils.fmtQty(items.fold(0.0, (a, b) => a + b.quantity))}',
-            style: pw.TextStyle(font: _arBold, fontSize: 12)),
+  String _groupName(String code, List<DocLine> scans) {
+    final name = scans
+        .lastWhere((e) => e.productName.isNotEmpty,
+            orElse: () => scans.first)
+        .productName;
+    return name.isEmpty ? code : name;
+  }
+
+  /// الصف المدمج لصنف واحد (كمية/وزن مجموع + أحدث سعر).
+  pw.TableRow _mergedRow(String code, List<DocLine> scans, int n) {
+    final qty = scans.fold(0.0, (a, b) => a + b.quantity);
+    final weight = scans.fold(0.0, (a, b) => a + b.weight);
+    final price = scans.last.price;
+    return pw.TableRow(children: [
+      _ocell(_f3(qty * price)),
+      _ocell(price.toString()),
+      _ocell(_f3(weight)),
+      _ocell(_fq(qty)),
+      _ocell(_groupName(code, scans)),
+      _ocell('$n'),
+    ]);
+  }
+
+  /// تفصيلة صنف واحد بنفس شكل الصورة: صف عنوان (الصنف + اسمه)
+  /// ثم صف لكل مسحة (وزنها تحت عمود الصنف + رقم المسحة).
+  List<pw.TableRow> _detailRows(String code, List<DocLine> scans) {
+    final rows = <pw.TableRow>[
+      pw.TableRow(children: [
+        _ocell(''),
+        _ocell(''),
+        _ocell(''),
+        _ocell(''),
+        _ocell('الصنف: ${_groupName(code, scans)}', bold: true),
+        _ocell('مسلسل', bold: true),
+      ]),
+      for (var i = 0; i < scans.length; i++)
+        pw.TableRow(children: [
+          _ocell(''),
+          _ocell(''),
+          _ocell(''),
+          _ocell(''),
+          _ocell(scans[i].weight.toString()),
+          _ocell('${i + 1}'),
+        ]),
+    ];
+    return rows;
+  }
+
+  /// زر PDF في شاشة تفاصيل الاستلام — نفس شكل صورة الأوردر.
+  Future<String> receiptPdf(
+      ReceiptHeader h, List<ReceiptItem> items, String folderPath) {
+    return orderPdf(
+      kindLabel: 'استلامات',
+      partyKindLabel: 'مورد',
+      num: h.number.toString(),
+      date: h.date,
+      partyCode: h.supplierCode,
+      partyName: h.supplierName,
+      byUser: h.byUser,
+      totalPrice: h.totalPrice,
+      totalQty: h.totalQty,
+      totalWeight: h.totalWeight,
+      rawItems: [
+        for (final e in items)
+          DocLine(
+              productCode: e.productCode,
+              productName: e.productName,
+              quantity: e.quantity,
+              weight: e.weight,
+              price: e.price),
       ],
-    ));
-    return _save(doc, folderPath, '${h.id}.pdf');
+      folderPath: folderPath,
+      fileName: '${h.id}.pdf',
+    );
+  }
+
+  /// زر PDF في شاشة تفاصيل التسليم — نفس شكل صورة الأوردر.
+  Future<String> deliveryPdf(
+      DeliveryHeader h, List<DeliveryItem> items, String folderPath) {
+    return orderPdf(
+      kindLabel: 'تسليمات',
+      partyKindLabel: 'عميل',
+      num: h.number.toString(),
+      date: h.date,
+      partyCode: h.customerCode,
+      partyName: h.customerName,
+      byUser: h.byUser,
+      totalPrice: h.totalPrice,
+      totalQty: h.totalQty,
+      totalWeight: h.totalWeight,
+      rawItems: [
+        for (final e in items)
+          DocLine(
+              productCode: e.productCode,
+              productName: e.productName,
+              quantity: e.quantity,
+              weight: e.weight,
+              price: e.price),
+      ],
+      folderPath: folderPath,
+      fileName: '${h.id}.pdf',
+    );
   }
 
   Future<String> inventoryPdf(InventorySession s, List<InventoryItem> items,
