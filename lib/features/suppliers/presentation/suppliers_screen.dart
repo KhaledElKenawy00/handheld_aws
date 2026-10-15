@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/pagination/pagination.dart';
 import '../../../core/providers.dart';
 import '../../../core/services/code_generator_service.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../shared/models/entities.dart';
 import '../../../shared/widgets/common.dart';
 import '../../../shared/widgets/partner_export_buttons.dart';
@@ -11,7 +12,7 @@ import '../../../shared/widgets/pagination_bar.dart';
 import '../../products/presentation/products_screen.dart';
 import '../../receipts/presentation/receipts_screen.dart';
 
-/// الموردون: قائمة + تفاصيل + إضافة — paginated (30 صف/صفحة).
+/// الموردون: قائمة + تفاصيل + إضافة — paginated (10 صف/صفحة).
 /// البحث يتم في قاعدة البيانات: يشمل كل الموردين.
 class SuppliersTab extends ConsumerWidget {
   const SuppliersTab({super.key});
@@ -57,12 +58,12 @@ class SuppliersTab extends ConsumerWidget {
                                 width: 44,
                                 height: 44,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF0B1F3A),
+                                  color: AppColors.primary,
                                   borderRadius:
-                                      BorderRadius.circular(12),
+                                      BorderRadius.circular(14),
                                 ),
                                 child: const Icon(
-                                    Icons.local_shipping,
+                                    Icons.local_shipping_rounded,
                                     color: Colors.white,
                                     size: 24)),
                             title: Text(ss[i].desc),
@@ -124,7 +125,7 @@ class SupplierDetailsScreen extends ConsumerStatefulWidget {
 }
 
 class _SupplierDetailsState extends ConsumerState<SupplierDetailsScreen> {
-  static const int _pageSize = 20;
+  static const int _pageSize = 10;
   int _page = 0;
 
   @override

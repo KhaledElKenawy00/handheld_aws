@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/pagination/pagination.dart';
 import '../../../core/providers.dart';
 import '../../../core/services/code_generator_service.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../shared/models/entities.dart';
 import '../../../shared/widgets/common.dart';
 import '../../../shared/widgets/partner_export_buttons.dart';
@@ -55,11 +56,11 @@ class CustomersTab extends ConsumerWidget {
                                 width: 44,
                                 height: 44,
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF0B1F3A),
+                                  color: AppColors.secondary,
                                   borderRadius:
-                                      BorderRadius.circular(12),
+                                      BorderRadius.circular(14),
                                 ),
-                                child: const Icon(Icons.person,
+                                child: const Icon(Icons.people_rounded,
                                     color: Colors.white,
                                     size: 24)),
                             title: Text(ss[i].desc),
@@ -121,7 +122,7 @@ class CustomerDetailsScreen extends ConsumerStatefulWidget {
 }
 
 class _CustomerDetailsState extends ConsumerState<CustomerDetailsScreen> {
-  static const int _pageSize = 20;
+  static const int _pageSize = 10;
   int _page = 0;
 
   @override

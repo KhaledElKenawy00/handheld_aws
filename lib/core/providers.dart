@@ -10,6 +10,8 @@ import '../core/services/settings_service.dart';
 import '../core/services/storage_service.dart';
 import '../features/products/product_repositories.dart';
 import '../features/receipts/voucher_repositories.dart';
+import '../features/ops/ops_repository.dart';
+import '../shared/models/entities.dart';
 import 'pagination/pagination.dart';
 
 /// مزودو الخدمات والمستودعات
@@ -32,6 +34,13 @@ final backupServiceProvider =
     Provider((ref) => BackupService(storage: ref.watch(storageServiceProvider)));
 final settingsServiceProvider = Provider((_) => SettingsService());
 final docNumberServiceProvider = Provider((_) => DocumentNumberService());
+final usersRepoProvider = Provider((_) => UsersRepo());
+final warehouseRepoProvider = Provider((_) => WarehouseRepo());
+final productCodeRepoProvider = Provider((_) => ProductCodeRepo());
+final opsRepoProvider = Provider((_) => OpsRepo());
+
+/// المستخدم الحالي بعد الدخول (null = غير مسجل).
+final currentUserProvider = StateProvider<AppUser?>((_) => null);
 
 /// Dashboard counts
 final dashboardProvider = FutureProvider<Map<String, int>>((ref) async {

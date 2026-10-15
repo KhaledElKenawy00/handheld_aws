@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/providers.dart';
 import '../../../core/scanner/scanner_providers.dart';
+import '../../../shared/widgets/app_ui.dart';
 import '../../../shared/widgets/common.dart';
 
 /// الإعدادات: بيانات المنشأة + المخزون السالب + Scanner + نسخ احتياطي
@@ -71,8 +72,90 @@ class _SS extends ConsumerState<SettingsScreen> {
     if (mounted) toast(context, 'تم حفظ الإعدادات');
   }
 
-  Future<void> _backup() async {
-    setState(() => busyBackup = true);
+  /// دايلوج اختيارات التصدير الـ 3: شامل PDF / شامل Excel / نسخة كاملة (.sanad)
+  Future<void> _exportChoice() async {
+    final sel = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('اختر صيغة التصدير',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontFamily: 'Cairo',
+                fontSize: 19,
+                fontWeight: FontWeight.w800)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pop(context, 'pdf'),
+              icon: const Icon(Icons.picture_as_pdf_outlined, size: 22),
+              label: const Text('شامل PDF',
+                  style: TextStyle(
+                      fontFamily: 'Cairo',
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800)),
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(64, 52),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.pop(context, 'excel'),
+              icon: const Icon(Icons.table_chart_outlined, size: 22),
+              label: const Text('شامل Excel',
+                  style: TextStyle(
+                      fontFamily: 'Cairo',
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800)),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(64, 52),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: () => Navigator.pop(context, 'sanad'),
+              icon: const Icon(Icons.backup_outlined, size: 22),
+              label: const Text('نسخة كاملة (.sanad) للباك اب',
+                  style: TextStyle(
+                      fontFamily: 'Cairo',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800)),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(64, 52),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30)),
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'النسخة الكاملة تُستخدم للباك اب والاستعادة على نفس الجهاز أو جهاز آخر.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, height: 1.6),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('إلغاء')),
+        ],
+      ),
+    );
+    if (sel == 'pdf') {
+      await _exportAllPdf();
+    } else if (sel == 'excel') {
+      await _exportAllExcel();
+    } else if (sel == 'sanad') {
+      await _backup();
+    }
+  }
+
+  Future<void> _backup() async {    setState(() => busyBackup = true);
     try {
       await Permission.storage.request();
       final path =
@@ -127,7 +210,7 @@ class _SS extends ConsumerState<SettingsScreen> {
               style:
                   TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
           content: Text(
-              '$path\n\nيشمل: الأصناف + الموردين + العملاء + الأذون + الجرد + ملف مستقل لكل مورد وعميل بكل أذونه.',
+              '$path\n\nيشمل: الأصناف + الموردين + العملاء + المخازن + الأذون (استلام/تسليم) + العمليات (مرتجعات/تحويلات) + ملف مستقل لكل مورد وعميل بكل أذونه.',
               style: const TextStyle(fontSize: 12, height: 1.6)),
           actions: [
             TextButton(
@@ -173,7 +256,7 @@ class _SS extends ConsumerState<SettingsScreen> {
               style:
                   TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
           content: Text(
-              '$path\n\nيشمل: الأصناف + الموردين + العملاء + الأذون بتفاصيل الأصناف + الجرد + ملف مستقل لكل مورد وعميل.',
+              '$path\n\nيشمل: الأصناف + الموردين + العملاء + المخازن + الأذون بتفاصيل الأصناف + العمليات (مرتجعات/تحويلات) + ملف مستقل لكل مورد وعميل.',
               style: const TextStyle(fontSize: 12, height: 1.6)),
           actions: [
             TextButton(
@@ -228,8 +311,12 @@ class _SS extends ConsumerState<SettingsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('الإعدادات')),
       body: ListView(padding: const EdgeInsets.all(12), children: [
-        const Text('بيانات المنشأة',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+        const AppHero(
+          title: 'الإعدادات',
+          subtitle: 'بيانات المنشأة والماسح والنسخ الاحتياطي',
+        ),
+        const SizedBox(height: 12),
+        const AppSectionTitle(title: 'بيانات المنشأة'),
         const SizedBox(height: 8),
         TextField(
             controller: storeC,
@@ -256,8 +343,7 @@ class _SS extends ConsumerState<SettingsScreen> {
             value: allowNeg,
             onChanged: (v) => setState(() => allowNeg = v)),
         const Divider(),
-        const Text('إعدادات الماسح (SUNMI L2s Pro)',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800)),
+        const AppSectionTitle(title: 'إعدادات الماسح (SUNMI L2s Pro)'),
         SwitchListTile(
             title: const Text('صوت تنبيه عند المسح (Beep)'),
             value: beep,
@@ -308,91 +394,53 @@ class _SS extends ConsumerState<SettingsScreen> {
         FilledButton(
             onPressed: _save, child: const Text('حفظ الإعدادات')),
         const SizedBox(height: 12),
-        const Text('النسخ الاحتياطي (Offline) — 3 أشكال',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+        const AppSectionTitle(title: 'النسخ الاحتياطي (Offline) — تصدير واستعادة'),
         const SizedBox(height: 8),
-        // النوع 1: نسخة النظام — للاستعادة بعد التحديث
+        // زر تصدير واحد يفتح الـ 3 اختيارات: PDF / Excel / نسخة كاملة (.sanad)
         Card(
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('1) نسخة النظام (.sanad)',
+                  const Text('تصدير البيانات',
                       style: TextStyle(
                           fontSize: 13, fontWeight: FontWeight.w800)),
                   const SizedBox(height: 4),
                   const Text(
-                      'انسخها الآن، وبعد تحديث التطبيق اعمل "استعادة" وارفع نفس الملف — سيعمل معك عادي.',
+                      'يصدر كل حاجة: أصناف + موردين + عملاء + مخازن + أذون (استلام/تسليم) + عمليات (مرتجعات/تحويلات)، وملف مستقل لكل مورد بكل أذونه ولكل عميل بكل أذونه.',
                       style: TextStyle(fontSize: 12, height: 1.6)),
                   const SizedBox(height: 10),
-                  Row(children: [
-                    Expanded(
-                        child: FilledButton.tonalIcon(
-                            icon: const Icon(Icons.backup, size: 20),
-                            label: Text(
-                                busyBackup ? 'جارٍ...' : 'نسخة النظام',
-                                style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800)),
-                            onPressed: busyBackup ? null : _backup)),
-                    const SizedBox(width: 8),
-                    Expanded(
-                        child: OutlinedButton.icon(
-                            icon: const Icon(Icons.restore, size: 20),
-                            label: const Text('استعادة نسخة',
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800)),
-                            onPressed: _restore)),
-                  ]),
-                ]),
-          ),
-        ),
-        const SizedBox(height: 8),
-        // النوع 2+3: الباكب الشامل — المستخدم يختار PDF أو Excel
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('2) الباكب الشامل — اختر الصيغة',
-                      style: TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w800)),
-                  const SizedBox(height: 4),
-                  const Text(
-                      'يصدر كل حاجة: موردين + أصناف + جرد + عملاء + أذون، وملف مستقل لكل مورد بكل أذونه ولكل عميل بكل أذونه.',
-                      style: TextStyle(fontSize: 12, height: 1.6)),
-                  const SizedBox(height: 10),
-                  Row(children: [
-                    Expanded(
-                        child: FilledButton.icon(
-                            icon: const Icon(Icons.picture_as_pdf,
-                                size: 20),
-                            label: Text(
-                                busyPdf ? 'جارٍ...' : 'شامل PDF',
-                                style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800)),
-                            onPressed: busyPdf || busyExcel
-                                ? null
-                                : _exportAllPdf)),
-                    const SizedBox(width: 8),
-                    Expanded(
-                        child: FilledButton.tonalIcon(
-                            icon:
-                                const Icon(Icons.table_chart, size: 20),
-                            label: Text(
-                                busyExcel ? 'جارٍ...' : 'شامل Excel',
-                                style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w800)),
-                            onPressed: busyPdf || busyExcel
-                                ? null
-                                : _exportAllExcel)),
-                  ]),
-                  if (busyPdf || busyExcel) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                        icon: const Icon(Icons.file_download_outlined,
+                            size: 20),
+                        label: Text(
+                            (busyPdf || busyExcel || busyBackup)
+                                ? 'جارٍ التصدير...'
+                                : 'تصدير',
+                            style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800)),
+                        onPressed: (busyPdf || busyExcel || busyBackup)
+                            ? null
+                            : _exportChoice),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                        icon: const Icon(Icons.restore, size: 20),
+                        label: const Text('استعادة نسخة',
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800)),
+                        onPressed: (busyPdf || busyExcel || busyBackup)
+                            ? null
+                            : _restore),
+                  ),
+                  if (busyPdf || busyExcel || busyBackup) ...[
                     const SizedBox(height: 8),
                     Row(children: [
                       const SizedBox(
@@ -402,7 +450,8 @@ class _SS extends ConsumerState<SettingsScreen> {
                               strokeWidth: 3)),
                       const SizedBox(width: 10),
                       Expanded(
-                          child: Text(exportStep,
+                          child: Text(
+                              busyBackup ? 'جارٍ إنشاء نسخة النظام...' : exportStep,
                               style: const TextStyle(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700))),

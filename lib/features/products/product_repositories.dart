@@ -8,14 +8,25 @@ import '../../shared/models/entities.dart';
 class ProductRepository {
   Future<Database> _db() => DatabaseHelper.instance.db;
 
+  static String cleanBarcode(String? raw) {
+    if (raw == null) return '';
+    var s = raw.trim();
+    if (s.isEmpty) return '';
+    s = s.replaceAll(RegExp(r'[\u0000-\u001F\u007F\u200B\u200C\u200D\uFEFF]'), '');
+    s = s.replaceAll(RegExp(r'\s+'), '');
+    return s.trim();
+  }
+
   Future<void> create(Product p) async {
     if (p.code.trim().isEmpty) throw const AppFailure('كود الصنف مطلوب');
     if (p.desc.trim().isEmpty) throw const AppFailure('اسم الصنف مطلوب');
     final d = await _db();
     try {
+      final bc = cleanBarcode(p.barcode);
       await d.insert('products', {
         ...p.toMap(),
         'code': p.code.trim(),
+        'barcode': bc.isEmpty ? null : bc,
         'createdAt': AppUtils.nowStr(),
         'updatedAt': AppUtils.nowStr(),
       });
@@ -29,11 +40,20 @@ class ProductRepository {
 
   Future<void> update(Product p) async {
     final d = await _db();
+    final bc = cleanBarcode(p.barcode);
     await d.update(
         'products',
         {
           'description': p.desc.trim(),
           'updatedAt': AppUtils.nowStr(),
+          'weightType': p.weightType,
+          'fixedWeight': p.fixedWeight,
+          'barcode': bc.isEmpty ? null : bc,
+          'price': p.price,
+          'hasCode': p.hasCode ? 1 : 0,
+          'hasWeight': p.hasWeight ? 1 : 0,
+          'hasDate': p.hasDate ? 1 : 0,
+          'hasMazraa': p.hasMazraa ? 1 : 0,
         },
         where: 'code=?',
         whereArgs: [p.code]);
@@ -65,18 +85,55 @@ class ProductRepository {
     return Product.fromMap(r.first);
   }
 
-  /// بحث سريع بالكود أو الاسم — debounced من الواجهة
+  /// بحث بالباركود المسجل في حقل الصنف نفسه (products.barcode).
+  /// هذا الحقل كان يُحفظ عند إضافة الصنف لكن لم يُبحث عنه أبدًا عند المسح
+  /// — وهو سبب "المسح لا يسمع الصنف في الطلب".
+  /// عند تكرار الباركود فضّل الصنف النشط (صف محذوف/موقوف لا يحجب الجديد).
+  Future<Product?> findByBarcode(String barcode) async {
+    final d = await _db();
+    final b = cleanBarcode(barcode);
+    if (b.isEmpty) return null;
+    var r = await d.query('products',
+        where: 'barcode=?',
+        whereArgs: [b],
+        orderBy: 'isActive DESC',
+        limit: 1);
+    if (r.isNotEmpty) return Product.fromMap(r.first);
+    // fallback: القيمة الخام بعد trim (صفوف قديمة قبل التوحيد).
+    final t = barcode.trim();
+    if (t.isNotEmpty && t != b) {
+      r = await d.query('products',
+          where: 'barcode=?',
+          whereArgs: [t],
+          orderBy: 'isActive DESC',
+          limit: 1);
+      if (r.isNotEmpty) return Product.fromMap(r.first);
+    }
+    return null;
+  }
+
+  /// حل شامل لأي مسح: كود صنف مباشر أو باركود حقل الصنف.
+  /// يُرجع الصنف لو وُجد بأي من الطريقتين.
+  Future<Product?> findByCodeOrBarcode(String scanned) async {
+    final s = scanned.trim();
+    if (s.isEmpty) return null;
+    final byCode = await findByCode(s);
+    if (byCode != null) return byCode;
+    return findByBarcode(s);
+  }
+
+  /// بحث سريع بالكود أو الاسم أو الباركود — debounced من الواجهة
   Future<List<Product>> search(String q,
-      {int limit = 50, int offset = 0, bool activeOnly = true}) async {
+      {int limit = 10, int offset = 0, bool activeOnly = true}) async {
     final d = await _db();
     final like = '%${q.trim()}%';
     final where = q.trim().isEmpty
         ? (activeOnly ? 'isActive=1' : '1=1')
         : (activeOnly
-            ? '(code LIKE ? OR description LIKE ?) AND isActive=1'
-            : '(code LIKE ? OR description LIKE ?)');
+            ? '(code LIKE ? OR description LIKE ? OR barcode LIKE ?) AND isActive=1'
+            : '(code LIKE ? OR description LIKE ? OR barcode LIKE ?)');
     final args =
-        q.trim().isEmpty ? <Object>[] : <Object>[like, like];
+        q.trim().isEmpty ? <Object>[] : <Object>[like, like, like];
     final rows = await d.query('products',
         where: where,
         whereArgs: args,
@@ -92,16 +149,16 @@ class ProductRepository {
     final where = q.trim().isEmpty
         ? (activeOnly ? 'isActive=1' : '1=1')
         : (activeOnly
-            ? '(code LIKE ? OR description LIKE ?) AND isActive=1'
-            : '(code LIKE ? OR description LIKE ?)');
-    final args = q.trim().isEmpty ? <Object>[] : <Object>[like, like];
+            ? '(code LIKE ? OR description LIKE ? OR barcode LIKE ?) AND isActive=1'
+            : '(code LIKE ? OR description LIKE ? OR barcode LIKE ?)');
+    final args = q.trim().isEmpty ? <Object>[] : <Object>[like, like, like];
     final r = await d.rawQuery(
         'SELECT COUNT(*) c FROM products WHERE $where', args);
     return (r.first['c'] as num).toInt();
   }
 
   Future<List<StockMovement>> movements(String productCode,
-      {int limit = 30, int offset = 0}) async {
+      {int limit = 10, int offset = 0}) async {
     final d = await _db();
     final rows = await d.query('stock_movements',
         where: 'productCode=?',
@@ -179,7 +236,7 @@ class SupplierRepository {
   }
 
   Future<List<Supplier>> search(String q,
-      {int limit = 50, int offset = 0, bool activeOnly = true}) async {
+      {int limit = 10, int offset = 0, bool activeOnly = true}) async {
     final d = await _db();
     final like = '%${q.trim()}%';
     final where = q.trim().isEmpty
@@ -212,7 +269,7 @@ class SupplierRepository {
   }
 
   Future<List<ReceiptHeader>> history(String supplierCode,
-      {int limit = 30, int offset = 0}) async {
+      {int limit = 10, int offset = 0}) async {
     final d = await _db();
     final rows = await d.query('receipts',
         where: 'supplierCode=?',
@@ -287,7 +344,7 @@ class CustomerRepository {
   }
 
   Future<List<Customer>> search(String q,
-      {int limit = 50, int offset = 0, bool activeOnly = true}) async {
+      {int limit = 10, int offset = 0, bool activeOnly = true}) async {
     final d = await _db();
     final like = '%${q.trim()}%';
     final where = q.trim().isEmpty
@@ -320,7 +377,7 @@ class CustomerRepository {
   }
 
   Future<List<DeliveryHeader>> history(String customerCode,
-      {int limit = 30, int offset = 0}) async {
+      {int limit = 10, int offset = 0}) async {
     final d = await _db();
     final rows = await d.query('deliveries',
         where: 'customerCode=?',

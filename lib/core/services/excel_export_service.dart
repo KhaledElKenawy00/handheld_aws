@@ -162,6 +162,66 @@ class ExcelExportService {
     return _saveXls(xls, folder, 'customers.xlsx');
   }
 
+  Future<String> exportWarehousesList(
+          List<Warehouse> ws, String folder) async {
+    final xls = Excel.createExcel();
+    final s = xls['Warehouses'];
+    s.appendRow([TextCellValue('Code'), TextCellValue('Name')]);
+    for (final e in ws) {
+      s.appendRow([TextCellValue(e.code), TextCellValue(e.name)]);
+    }
+    return _saveXls(xls, folder, 'warehouses.xlsx');
+  }
+
+  Future<String> exportOpsListWithItems(
+    List<OpHeader> hs,
+    Map<String, List<OpItem>> itemsById,
+    String folder,
+  ) async {
+    final xls = Excel.createExcel();
+    final s = xls['Operations'];
+    s.appendRow([
+      TextCellValue('Kind'),
+      TextCellValue('Number'),
+      TextCellValue('Party Type'),
+      TextCellValue('Party Code'),
+      TextCellValue('Party Name'),
+      TextCellValue('Date'),
+      TextCellValue('Items'),
+      TextCellValue('Total Qty'),
+    ]);
+    for (final h in hs) {
+      s.appendRow([
+        TextCellValue(h.kind),
+        IntCellValue(h.number),
+        TextCellValue(h.partyType),
+        TextCellValue(h.partyCode),
+        TextCellValue(h.partyName),
+        TextCellValue(h.date),
+        IntCellValue(h.totalItems),
+        DoubleCellValue(h.totalQty),
+      ]);
+    }
+    final det = xls['OpItems'];
+    det.appendRow([
+      TextCellValue('Operation'),
+      TextCellValue('Product Code'),
+      TextCellValue('Product Name'),
+      TextCellValue('Qty'),
+    ]);
+    for (final h in hs) {
+      for (final it in (itemsById[h.id] ?? const <OpItem>[])) {
+        det.appendRow([
+          TextCellValue(h.id),
+          TextCellValue(it.productCode),
+          TextCellValue(it.productName),
+          DoubleCellValue(it.quantity),
+        ]);
+      }
+    }
+    return _saveXls(xls, folder, 'operations.xlsx');
+  }
+
   Future<String> exportReceiptsList(
           List<ReceiptHeader> hs, String folder) async {
     final xls = Excel.createExcel();
@@ -458,6 +518,45 @@ class ExcelExportService {
     final d = await _baseDir();
     final f = File(p.join(d.path,
         withQty ? 'inventory_template.xlsx' : 'products_template.xlsx'));
+    await f.writeAsBytes(xls.encode()!);
+    return f.path;
+  }
+
+  /// قالب شيت استيراد الأذون (استلام/تسليم/مرتجعات):
+  /// party | date | product | qty (+ voucher | weight | price اختياري).
+  /// الصفوف بنفس voucher (أو نفس party + date) = إذن واحد.
+  Future<String> voucherTemplate() async {
+    final xls = Excel.createExcel();
+    final s = xls['Vouchers'];
+    s.appendRow([
+      TextCellValue('voucher'),
+      TextCellValue('party'),
+      TextCellValue('date'),
+      TextCellValue('product'),
+      TextCellValue('qty'),
+      TextCellValue('weight'),
+      TextCellValue('price'),
+    ]);
+    s.appendRow([
+      TextCellValue('1'),
+      TextCellValue('S001'),
+      TextCellValue('07/10/2026'),
+      TextCellValue('10001'),
+      IntCellValue(10),
+      IntCellValue(0),
+      IntCellValue(0),
+    ]);
+    s.appendRow([
+      TextCellValue('1'),
+      TextCellValue('S001'),
+      TextCellValue('07/10/2026'),
+      TextCellValue('10002'),
+      IntCellValue(5),
+      IntCellValue(0),
+      IntCellValue(0),
+    ]);
+    final d = await _baseDir();
+    final f = File(p.join(d.path, 'vouchers_template.xlsx'));
     await f.writeAsBytes(xls.encode()!);
     return f.path;
   }

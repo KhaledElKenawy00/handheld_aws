@@ -12,8 +12,9 @@ class PagedResult<T> {
 /// (WHERE ... LIKE) قبل LIMIT/OFFSET، فالبحث يشمل كل الصفوف
 /// وليس الصفحة المعروضة فقط.
 class Pagination {
-  /// عدد الصفوف في الصفحة — مناسب لأجهزة SUNMI الضعيفة
-  static const int defaultPageSize = 30;
+  /// عدد الصفوف في الصفحة — 10 كحد أقصى لتخفيف الحمل على أجهزة SUNMI الضعيفة
+  /// ومنع التهنيج بدل تحميل الكل مرة واحدة.
+  static const int defaultPageSize = 10;
 
   /// عدد الصفحات لإجمالي معين (صفحة واحدة على الأقل حتى لو فارغ)
   static int totalPages(int total, [int pageSize = defaultPageSize]) {

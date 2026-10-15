@@ -5,16 +5,23 @@ import 'package:flutter/foundation.dart';
 
 import 'scanner_service.dart';
 
-/// تكامل SUNMI L2s Pro الرسمي — بدون أي حزمة خارجية (يعمل مع Dart 3.11).
+/// تكامل ماسح الجهاز المدمج — بدون أي حزمة خارجية (يعمل مع Dart 3.11).
+/// يدعم SUNMI L2s Pro وأجهزة Honeywell (عبر Data Intent Claim).
 ///
 /// القنوات الأصلية (انظر MainActivity.kt):
 ///  - EventChannel `com.sanad.scanner/stream`: يستقبل كل مسح من
 ///    Broadcast الرسمي `com.sunmi.scanner.ACTION_DATA_CODE_RECEIVED`
-///    (extra `data`) — وضع Broadcast Output.
+///    (extra `data` — ووضع Broadcast Output) + fallbacks لأجهزة L2s Pro
+///    (`ACTION_DECODE_DATA` / `ACTION_SCAN_RESULT` + مفاتيح barcode/code/...
+///    + بايتات source_byte/data_byte) + بث Honeywell
+///    (`com.sanad.scanner.HONEYWELL_DATA` بعد Claim تلقائي).
 ///  - MethodChannel `com.sanad.scanner/control`: أوامر `trigger` / `stop`
 ///    تُترجم في MainActivity إلى بثّات SUNMI الرسمية لتشغيل الماسح برمجيًا.
 ///  - Keyboard-wedge: زر المسح الفيزيائي يصب في أي TextField مركّز
-///    تلقائيًا بدون أي كود (وضع KeyEvent الافتراضي).
+///    تلقائيًا بدون أي كود (وضع KeyEvent الافتراضي) — لذلك كل حقول
+///    الباركود/الرمز فيها autofocus + زر مسح برمجي كبديل.
+/// ملاحظة جهاز L2s Pro: فعّل من إعدادات الماسح وضع Broadcast Output
+/// أو KeyEvent حسب الاستخدام — التطبيق يدعم الاثنين معًا.
 class SunmiScannerService implements ScannerService {
   final _controller = StreamController<String>.broadcast();
   StreamSubscription? _nativeSub;
@@ -53,8 +60,21 @@ class SunmiScannerService implements ScannerService {
   Future<void> initialize() async {
     if (_ready) return;
     try {
+      // بعض أجهزة L2s Pro ترسل الباركود مع \n في النهاية (wedge) —
+      // _emit بيعمل trim تلقائيًا.
       _nativeSub = _streamCh.receiveBroadcastStream().listen(
-        (dynamic e) => _emit(e.toString()),
+        (dynamic e) {
+          if (e == null) return;
+          if (e is List<int>) {
+            try {
+              _emit(String.fromCharCodes(e));
+            } catch (_) {
+              _emit(e.toString());
+            }
+          } else {
+            _emit(e.toString());
+          }
+        },
         onError: (Object e) => debugPrint('sunmi broadcast err: $e'),
       );
     } catch (e) {

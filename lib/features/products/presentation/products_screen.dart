@@ -9,12 +9,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/pagination/pagination.dart';
 import '../../../core/providers.dart';
 import '../../../core/scanner/scanner_providers.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../shared/models/entities.dart';
+import '../../../shared/widgets/app_ui.dart';
 import '../../../shared/widgets/common.dart';
 import '../../../shared/widgets/pagination_bar.dart';
 import '../../../shared/widgets/scan_input.dart';
 
-/// قائمة الأصناف + بحث + إضافة + استيراد — paginated (30 صف/صفحة).
+/// قائمة الأصناف + بحث + إضافة + استيراد — paginated (10 صف/صفحة).
 /// البحث يتم في قاعدة البيانات قبل التقطيع: يشمل كل الأصناف.
 class ProductsScreen extends ConsumerWidget {
   const ProductsScreen({super.key});
@@ -68,8 +70,8 @@ class ProductsScreen extends ConsumerWidget {
                       width: 44,
                       height: 44,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF0B1F3A),
-                        borderRadius: BorderRadius.circular(12),
+                        color: AppColors.primaryDark,
+                        borderRadius: BorderRadius.circular(14),
                       ),
                       alignment: Alignment.center,
                       child: Text(tag,
@@ -156,7 +158,7 @@ class ProductDetailsScreen extends ConsumerStatefulWidget {
 }
 
 class _ProductDetailsState extends ConsumerState<ProductDetailsScreen> {
-  static const int _pageSize = 20;
+  static const int _pageSize = 10;
   int _page = 0;
 
   @override
@@ -369,6 +371,40 @@ class _ProductFormState extends ConsumerState<ProductFormRoute> {
     if (mounted) setState(() => loading = false);
   }
 
+  Future<void> _save() async {
+    try {
+      if (widget.code != null) {
+        // وضع التعديل: حافظ على باقي بيانات الصنف (باركود/وزن/سعر...)
+        // حتى لا تُمسح عند تعديل الاسم فقط.
+        final old =
+            await ref.read(productRepoProvider).findByCode(widget.code!);
+        await ref.read(productRepoProvider).update(Product(
+            code: codeC.text.trim(),
+            desc: descC.text.trim(),
+            price: old?.price ?? 0,
+            weightType: old?.weightType ?? 'متغير',
+            fixedWeight: old?.fixedWeight ?? 0,
+            barcode: old?.barcode,
+            hasCode: old?.hasCode ?? true,
+            hasWeight: old?.hasWeight ?? true,
+            hasDate: old?.hasDate ?? false,
+            hasMazraa: old?.hasMazraa ?? true));
+      } else {
+        await ref
+            .read(productRepoProvider)
+            .create(Product(
+                code: codeC.text.trim(),
+                desc: descC.text.trim()));
+      }
+      if (context.mounted) {
+        toast(context, 'تم الحفظ بنجاح');
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      if (context.mounted) showError(context, e);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isEdit = widget.code != null;
@@ -376,87 +412,102 @@ class _ProductFormState extends ConsumerState<ProductFormRoute> {
       appBar: AppBar(title: Text(isEdit ? 'تعديل صنف' : 'إضافة صنف')),
       body: loading
           ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: TextField(
-                          controller: codeC,
-                          focusNode: codeFocus,
-                          enabled: !isEdit,
-                          autofocus: !isEdit,
-                          textInputAction: TextInputAction.next,
-                          onSubmitted: (_) =>
-                              descFocus.requestFocus(),
-                          decoration: InputDecoration(
-                            labelText: 'الكود (فريد)',
-                            hintText: 'امسح بالماسح أو أدخل يدويًا',
-                            helperText: lastScanned == null
-                                ? 'اضغط زر المسح في الجهاز لملء الكود'
-                                : 'آخر مسح: $lastScanned',
-                            suffixIcon: isEdit
-                                ? null
-                                : IconButton(
-                                    icon: const Icon(Icons
-                                        .document_scanner_outlined),
-                                    tooltip: 'مسح بالـ Scanner',
+          : Column(children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(children: [
+                      AppCard(
+                        child: Column(
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
+                          children: [
+                            const AppSectionTitle(
+                                title: 'بيانات الصنف'),
+                            const SizedBox(height: 12),
+                            Row(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                      controller: codeC,
+                                      focusNode: codeFocus,
+                                      enabled: !isEdit,
+                                      autofocus: !isEdit,
+                                      textInputAction:
+                                          TextInputAction.next,
+                                      textDirection:
+                                          TextDirection.ltr,
+                                      onSubmitted: (_) =>
+                                          descFocus.requestFocus(),
+                                      decoration: InputDecoration(
+                                        labelText: 'الكود (فريد)',
+                                        hintText:
+                                            'امسح بالماسح أو أدخل يدويًا',
+                                        helperText: lastScanned ==
+                                                null
+                                            ? 'اضغط زر المسح في الجهاز لملء الكود'
+                                            : 'آخر مسح: $lastScanned',
+                                        suffixIcon: isEdit
+                                            ? null
+                                            : IconButton(
+                                                icon: const Icon(Icons
+                                                    .document_scanner_outlined),
+                                                tooltip:
+                                                    'مسح بالـ Scanner',
+                                                onPressed:
+                                                    _triggerScan,
+                                              ),
+                                      )),
+                                ),
+                                if (!isEdit) ...[
+                                  const SizedBox(width: 8),
+                                  FilledButton.icon(
                                     onPressed: _triggerScan,
+                                    icon: const Icon(
+                                        Icons.document_scanner_outlined),
+                                    label: const Text('مسح'),
                                   ),
-                          )),
-                    ),
-                    if (!isEdit) ...[
-                      const SizedBox(width: 8),
-                      FilledButton.icon(
-                        onPressed: _triggerScan,
-                        icon: const Icon(
-                            Icons.document_scanner_outlined),
-                        label: const Text('مسح'),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            TextField(
+                                controller: descC,
+                                focusNode: descFocus,
+                                textInputAction:
+                                    TextInputAction.done,
+                                decoration:
+                                    const InputDecoration(
+                                        labelText:
+                                            'الوصف / الاسم')),
+                          ],
+                        ),
                       ),
-                    ],
-                  ],
+                    ]),
+                  ),
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                    controller: descC,
-                    focusNode: descFocus,
-                    textInputAction: TextInputAction.done,
-                    decoration:
-                        const InputDecoration(labelText: 'الوصف / الاسم')),
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: () async {
-                    try {
-                      if (isEdit) {
-                        await ref.read(productRepoProvider).update(Product(
-                            code: codeC.text.trim(),
-                            desc: descC.text.trim()));
-                      } else {
-                        await ref
-                            .read(productRepoProvider)
-                            .create(Product(
-                                code: codeC.text.trim(),
-                                desc: descC.text.trim()));
-                      }
-                      if (context.mounted) {
-                        toast(context, 'تم الحفظ بنجاح');
-                        Navigator.pop(context, true);
-                      }
-                    } catch (e) {
-                      if (context.mounted) showError(context, e);
-                    }
-                  },
-                  child: const Text('حفظ'),
+                SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                        16, 8, 16, 16),
+                    child: AppButton.primary(
+                      label: 'حفظ',
+                      icon: Icons.check_rounded,
+                      onPressed: _save,
+                    ),
+                  ),
                 ),
               ]),
-            ),
     );
   }
 }
 
-/// مركز الاستيراد: أصناف / موردين / عملاء / جرد — مع Preview
+/// مركز الاستيراد من شيت Excel — مع Preview:
+/// أصناف / موردين / عملاء / أذون استلام / أذون تسليم / مرتجعات.
+/// صيغة الأذون: party | date | product | qty (+ voucher | weight | price اختياري)
+/// — الصفوف بنفس رقم الإذن (أو نفس الطرف+التاريخ) = إذن واحد.
 class ImportHubScreen extends ConsumerStatefulWidget {
   final int initial;
   const ImportHubScreen({super.key, this.initial = 0});
@@ -469,7 +520,42 @@ class _ImportHubState extends ConsumerState<ImportHubScreen> {
   String? fileName;
   File? file;
   String? kind;
+  String returnsKind = 'مرتجع عميل';
   bool busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // pre-select حسب الشاشة اللي جاي منها: 0 أصناف / 1 موردين / 2 عملاء.
+    const byIndex = ['products', 'suppliers', 'customers'];
+    if (widget.initial >= 0 && widget.initial < byIndex.length) {
+      kind = byIndex[widget.initial];
+    }
+  }
+
+  static const _labels = {
+    'products': 'الأصناف',
+    'suppliers': 'الموردين',
+    'customers': 'العملاء',
+    'receipts': 'أذون استلام',
+    'deliveries': 'أذون تسليم',
+    'returns': 'مرتجعات',
+  };
+
+  static const _formats = {
+    'products': 'code | desc',
+    'suppliers': 'code | desc',
+    'customers': 'code | desc',
+    'receipts':
+        'party (كود المورد) | date | product (كود الصنف) | qty (+ voucher | weight | price اختياري)',
+    'deliveries':
+        'party (كود العميل) | date | product (كود الصنف) | qty (+ voucher | weight | price اختياري)',
+    'returns':
+        'party (كود العميل/المورد حسب النوع) | date | product | qty (+ voucher | weight | price اختياري)',
+  };
+
+  bool get _isVoucher =>
+      kind == 'receipts' || kind == 'deliveries' || kind == 'returns';
 
   Future<void> _pick(String k) async {
     final r = await FilePicker.platform.pickFiles(
@@ -498,11 +584,18 @@ class _ImportHubState extends ConsumerState<ImportHubScreen> {
     setState(() => busy = true);
     try {
       final svc = ref.read(importServiceProvider);
-      final sum = kind == 'products'
-          ? await svc.importProducts(file!)
-          : kind == 'suppliers'
-              ? await svc.importSuppliers(file!)
-              : await svc.importCustomers(file!);
+      final byUser =
+          ref.read(currentUserProvider)?.username ?? 'استيراد';
+      final sum = switch (kind) {
+        'products' => await svc.importProducts(file!),
+        'suppliers' => await svc.importSuppliers(file!),
+        'customers' => await svc.importCustomers(file!),
+        'receipts' => await svc.importReceipts(file!, byUser: byUser),
+        'deliveries' => await svc.importDeliveries(file!, byUser: byUser),
+        'returns' => await svc.importReturns(file!, returnsKind,
+            byUser: byUser),
+        _ => await svc.importProducts(file!),
+      };
       ref.invalidate(productListProvider);
       ref.invalidate(supplierListProvider);
       ref.invalidate(customerListProvider);
@@ -517,8 +610,13 @@ class _ImportHubState extends ConsumerState<ImportHubScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('إجمالي الصفوف: ${sum.total}'),
-                  Text('جديد: ${sum.imported}'),
-                  Text('محدّث: ${sum.updated}'),
+                  if (_isVoucher) ...[
+                    Text('أذون جديدة: ${sum.imported}'),
+                    Text('بنود مضافة: ${sum.updated}'),
+                  ] else ...[
+                    Text('جديد: ${sum.imported}'),
+                    Text('محدّث: ${sum.updated}'),
+                  ],
                   Text('متخطى: ${sum.skipped}'),
                   if (sum.errors.isNotEmpty) ...[
                     const Divider(),
@@ -548,24 +646,63 @@ class _ImportHubState extends ConsumerState<ImportHubScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final fmt = kind == null ? null : _formats[kind];
     return Scaffold(
       appBar: AppBar(title: const Text('استيراد Excel')),
       body: ListView(padding: const EdgeInsets.all(12), children: [
-        const Card(
+        Card(
             child: Padding(
-                padding: EdgeInsets.all(12),
-                child: Text(
-                    'الصيغة: code | desc — الصف الأول عناوين. للجرد: code | desc | qty'))),
-        Wrap(spacing: 8, children: [
-          ElevatedButton(
-              onPressed: () => _pick('products'),
-              child: const Text('ملف الأصناف')),
-          ElevatedButton(
-              onPressed: () => _pick('suppliers'),
-              child: const Text('ملف الموردين')),
-          ElevatedButton(
-              onPressed: () => _pick('customers'),
-              child: const Text('ملف العملاء')),
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('حدد نوع البيانات أولًا ثم اختر ملف الشيت:',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 6),
+                      const Text(
+                          'الأصناف/الموردين/العملاء الصيغة: code | desc — الصف الأول عناوين.'),
+                      const SizedBox(height: 4),
+                      const Text(
+                          'الأذون (استلام/تسليم/مرتجعات) الصيغة: party | date | product | qty — والأعمدة voucher | weight | price اختيارية. الصفوف بنفس رقم الإذن (أو نفس الطرف + التاريخ) تدخل كإذن واحد.'),
+                    ]))),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final e in _labels.entries)
+            ChoiceChip(
+              label: Text(e.value),
+              selected: kind == e.key,
+              onSelected: (_) {
+                setState(() {
+                  kind = e.key;
+                  file = null;
+                  fileName = null;
+                  preview = null;
+                });
+              },
+            ),
+        ]),
+        if (kind == 'returns') ...[
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            initialValue: returnsKind,
+            decoration:
+                const InputDecoration(labelText: 'نوع المرتجع'),
+            items: const ['مرتجع عميل', 'مرتجع مورد']
+                .map((e) =>
+                    DropdownMenuItem(value: e, child: Text(e)))
+                .toList(),
+            onChanged: (v) =>
+                setState(() => returnsKind = v ?? returnsKind),
+          ),
+        ],
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          ElevatedButton.icon(
+              icon: const Icon(Icons.upload_file),
+              onPressed: kind == null ? null : () => _pick(kind!),
+              label: Text(kind == null
+                  ? 'اختر النوع أولًا'
+                  : 'ملف ${_labels[kind]}')),
           OutlinedButton(
               onPressed: () async {
                 final p = await ref
@@ -573,20 +710,41 @@ class _ImportHubState extends ConsumerState<ImportHubScreen> {
                     .template();
                 if (context.mounted) toast(context, 'تم إنشاء القالب: $p');
               },
-              child: const Text('تحميل قالب')),
+              child: const Text('قالب أصناف')),
+          OutlinedButton(
+              onPressed: () async {
+                final p = await ref
+                    .read(excelServiceProvider)
+                    .voucherTemplate();
+                if (context.mounted) toast(context, 'تم إنشاء قالب الأذون: $p');
+              },
+              child: const Text('قالب أذون')),
         ]),
+        if (fmt != null) ...[
+          const SizedBox(height: 8),
+          Text('الصيغة ($kind): $fmt',
+              style: const TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w600)),
+        ],
         if (fileName != null) ...[
           const SizedBox(height: 12),
-          Text('الملف: $fileName ($kind)'),
+          Text('الملف: $fileName (${_labels[kind]})'),
           if (preview != null) ...[
             const SizedBox(height: 8),
             Text('معاينة أول ${preview!.length} صفوف:',
                 style: const TextStyle(fontWeight: FontWeight.bold)),
-            ...preview!.map((r) => Card(
-                child: ListTile(
-                    dense: true,
-                    title: Text(
-                        'code: ${r['code'] ?? ''} — desc: ${r['desc'] ?? ''} ${r['qty'] != null ? '| qty: ${r['qty']}' : ''}')))),
+            ...preview!.map((r) {
+              final keys = r.keys
+                  .where((k) => k != '_row')
+                  .take(4)
+                  .toList();
+              return Card(
+                  child: ListTile(
+                      dense: true,
+                      title: Text(keys
+                          .map((k) => '$k: ${r[k]}')
+                          .join(' — '))));
+            }),
           ],
           const SizedBox(height: 12),
           FilledButton(
@@ -595,7 +753,49 @@ class _ImportHubState extends ConsumerState<ImportHubScreen> {
                   ? const CircularProgressIndicator()
                   : const Text('تنفيذ الاستيراد')),
         ],
+        const SizedBox(height: 12),
+        const Divider(),
+        Card(
+            child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('استعادة نسخة كاملة (.sanad)',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 4),
+                      const Text(
+                          'لاسترجاع باك اب سابق — ستحل محل البيانات الحالية.',
+                          style: TextStyle(fontSize: 12)),
+                      const SizedBox(height: 8),
+                      OutlinedButton.icon(
+                          icon: const Icon(Icons.restore),
+                          label: const Text('اختيار ملف النسخة'),
+                          onPressed: busy ? null : _restoreBackup),
+                    ]))),
       ]),
     );
+  }
+
+  Future<void> _restoreBackup() async {
+    final r = await FilePicker.platform.pickFiles(
+        type: FileType.custom, allowedExtensions: ['sanad', 'zip']);
+    if (r == null || r.files.single.path == null) return;
+    if (!await confirm(
+        context, 'استعادة النسخة ستحل محل البيانات الحالية. متابعة؟')) {
+      return;
+    }
+    setState(() => busy = true);
+    try {
+      await ref
+          .read(backupServiceProvider)
+          .restoreBackup(File(r.files.single.path!));
+      ref.invalidate(dashboardProvider);
+      if (mounted) toast(context, 'تمت الاستعادة بنجاح — أعد تشغيل التطبيق');
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
   }
 }

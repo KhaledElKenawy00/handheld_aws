@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/pagination/pagination.dart';
 import '../../../core/providers.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../shared/models/entities.dart';
 import '../../../shared/widgets/common.dart';
 import '../../../shared/widgets/pagination_bar.dart';
@@ -52,11 +53,11 @@ class StockScreen extends ConsumerWidget {
                         final p = ps[i];
                         final low = p.stock <= 0;
                         final qtyColor = low
-                            ? const Color(0xFFB71C1C)
-                            : const Color(0xFF1B7A2B);
+                            ? AppColors.danger
+                            : AppColors.successStrong;
                         final qtyBg = low
-                            ? const Color(0xFFFFEBEE)
-                            : const Color(0xFFE6F4EA);
+                            ? AppColors.dangerBg
+                            : AppColors.successBg;
                         final qtyStr = p.stock ==
                                 p.stock.truncateToDouble()
                             ? p.stock.toInt().toString()
@@ -98,7 +99,7 @@ class StockScreen extends ConsumerWidget {
                                         style: const TextStyle(
                                             fontSize: 14,
                                             fontWeight: FontWeight.w800,
-                                            color: Color(0xFF101A2E))),
+                                            color: AppColors.textPrimary)),
                                     const SizedBox(height: 2),
                                     Text('كود: ${p.code}',
                                         maxLines: 1,
@@ -107,7 +108,7 @@ class StockScreen extends ConsumerWidget {
                                         style: const TextStyle(
                                             fontSize: 11,
                                             fontWeight: FontWeight.w600,
-                                            color: Color(0xFF3A4763))),
+                                            color: AppColors.textSecondary)),
                                   ],
                                 ),
                               ),

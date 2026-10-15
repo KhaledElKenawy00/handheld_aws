@@ -28,9 +28,10 @@ class BackupService {
       'products',
       'suppliers',
       'customers',
+      'warehouses',
       'receipts',
       'deliveries',
-      'inventory_sessions'
+      'op_headers'
     ]) {
       final r = await db.rawQuery('SELECT COUNT(*) c FROM $t');
       counts[t] = (r.first['c'] as num).toInt();

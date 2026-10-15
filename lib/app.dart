@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
-import 'core/theme/app_theme.dart';
-import 'features/dashboard/presentation/splash_screen.dart';
+import 'core/theme/ref_style.dart';
+import 'features/auth/login_screen.dart';
 
 class SanadApp extends StatelessWidget {
   const SanadApp({super.key});
@@ -12,7 +12,7 @@ class SanadApp extends StatelessWidget {
     return MaterialApp(
       title: 'SANAD — سند',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.light(),
+      theme: RefTheme.light(),
       locale: const Locale('ar'),
       supportedLocales: const [Locale('ar'), Locale('en')],
       localizationsDelegates: const [
@@ -22,7 +22,7 @@ class SanadApp extends StatelessWidget {
       ],
       builder: (context, child) =>
           Directionality(textDirection: TextDirection.rtl, child: child!),
-      home: const SplashScreen(),
+      home: const LoginScreen(),
     );
   }
 }

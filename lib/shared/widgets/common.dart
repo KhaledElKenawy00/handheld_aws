@@ -3,10 +3,37 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../core/theme/app_theme.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_dimensions.dart';
+import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/app_utils.dart';
+import '../models/entities.dart';
+import 'app_ui.dart';
 
-/// عناصر مشتركة: بحث + بطاقات + حوارات + عدّاد كمية + شريط مسح
+/// عناصر مشتركة — تحافظ على نفس الـ API القديم
+/// لكن بتصميم Meadow Green Enterprise الجديد.
+/// الشاشات الجديدة يُفضّل أن تستخدم [app_ui.dart] مباشرة.
+
+// ── Icon mapping الموحد ──────────────────────────────
+class AppIcons {
+  AppIcons._();
+  static const IconData products = Icons.inventory_2_rounded;
+  static const IconData customers = Icons.people_rounded;
+  static const IconData suppliers = Icons.local_shipping_rounded;
+  static const IconData warehouse = Icons.warehouse_rounded;
+  static const IconData deliveries = Icons.local_shipping_rounded;
+  static const IconData receipts = Icons.receipt_long_rounded;
+  static const IconData returns = Icons.undo_rounded;
+  static const IconData transfers = Icons.swap_horiz_rounded;
+  static const IconData settings = Icons.settings_rounded;
+  static const IconData users = Icons.manage_accounts_rounded;
+  static const IconData print = Icons.print_rounded;
+  static const IconData export = Icons.file_download_rounded;
+  static const IconData import = Icons.file_upload_rounded;
+  static const IconData stock = Icons.inventory_rounded;
+  static const IconData reports = Icons.bar_chart_rounded;
+}
+
 class SearchField extends StatelessWidget {
   final String hint;
   final ValueChanged<String> onChanged;
@@ -20,10 +47,14 @@ class SearchField extends StatelessWidget {
     return TextField(
       controller: controller,
       style: const TextStyle(
-          fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.ink),
+          fontFamily: AppTextStyles.family,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: AppColors.textPrimary),
       decoration: InputDecoration(
         hintText: hint,
-        prefixIcon: const Icon(Icons.search, size: 20),
+        prefixIcon:
+            const Icon(Icons.search_rounded, size: 22),
       ),
       onChanged: (v) {
         t?.cancel();
@@ -50,43 +81,12 @@ class StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(children: [
-            CircleAvatar(
-                radius: 20,
-                backgroundColor: color.withValues(alpha: .14),
-                foregroundColor: color,
-                child: Icon(icon, size: 22)),
-            const SizedBox(width: 10),
-            Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                  Text(title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.inkSoft)),
-                  const SizedBox(height: 2),
-                  Text(value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                          color: AppTheme.ink)),
-                ])),
-          ]),
-        ),
-      ),
+    return AppStatCard(
+      title: title,
+      value: value,
+      icon: icon,
+      color: color,
+      onTap: onTap,
     );
   }
 }
@@ -99,30 +99,39 @@ class QtyBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final fg = AppColors.qtyFg(isReceipt);
+    final bg = AppColors.qtyBg(isReceipt);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      padding:
+          const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: AppTheme.qtyBg(isReceipt),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-            color: AppTheme.qtyFg(isReceipt).withValues(alpha: .4),
-            width: 1.5),
+        color: bg,
+        borderRadius:
+            BorderRadius.circular(AppDimensions.radiusBadge),
+        border:
+            Border.all(color: fg.withValues(alpha: .35), width: 1.2),
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Text(AppUtils.fmtQty(qty),
+        Text(_fmt(qty),
+            textDirection: TextDirection.ltr,
             style: TextStyle(
-                fontSize: 16,
+                fontFamily: AppTextStyles.family,
+                fontSize: 17,
                 fontWeight: FontWeight.w800,
-                color: AppTheme.qtyFg(isReceipt),
+                color: fg,
                 height: 1.1)),
         Text('كمية',
             style: TextStyle(
+                fontFamily: AppTextStyles.family,
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
-                color: AppTheme.qtyFg(isReceipt))),
+                color: fg)),
       ]),
     );
   }
+
+  String _fmt(double v) =>
+      v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
 }
 
 /// كارت إذن موحد: العنوان = اسم المورد/العميل
@@ -148,81 +157,14 @@ class VoucherCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 2,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: isReceipt
-                      ? AppTheme.successBg
-                      : AppTheme.warningBg,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  isReceipt
-                      ? Icons.arrow_downward_rounded
-                      : Icons.arrow_upward_rounded,
-                  size: 22,
-                  color: isReceipt
-                      ? AppTheme.success
-                      : AppTheme.warning,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // عنوان الكارد: اسم المورد / العميل
-                    Text(partnerName,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            color: AppTheme.ink,
-                            height: 1.3)),
-                    const SizedBox(height: 3),
-                    Text('$voucherId  •  $date',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.inkSoft)),
-                    const SizedBox(height: 3),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppTheme.accentSoft,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text('الأصناف: $totalItems',
-                          style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              color: AppTheme.navy)),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 6),
-              QtyBadge(qty: totalQty, isReceipt: isReceipt),
-            ],
-          ),
-        ),
-      ),
+    return AppTransactionCard(
+      partnerName: partnerName,
+      voucherId: voucherId,
+      date: date,
+      totalItems: totalItems,
+      totalQty: totalQty,
+      isReceipt: isReceipt,
+      onTap: onTap,
     );
   }
 }
@@ -247,51 +189,51 @@ class VoucherLineCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Row(children: [
-          Expanded(
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(productName,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: AppTheme.ink)),
-                  Text('كود: $productCode',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.inkSoft)),
-                  if (stepper != null) ...[
-                    const SizedBox(height: 4),
-                    stepper!,
-                  ],
-                ]),
-          ),
-          const SizedBox(width: 6),
-          QtyBadge(qty: quantity, isReceipt: isReceipt),
-          if (onDelete != null)
-            IconButton(
-                icon: const Icon(Icons.delete_outline,
-                    color: AppTheme.danger, size: 22),
-                onPressed: onDelete),
-        ]),
-      ),
+    return AppCard(
+      padding: const EdgeInsets.all(12),
+      child: Row(children: [
+        Expanded(
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(productName,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontFamily: AppTextStyles.family,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary)),
+                const SizedBox(height: 2),
+                Text('كود: $productCode',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textDirection: TextDirection.ltr,
+                    style: const TextStyle(
+                        fontFamily: AppTextStyles.family,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textSecondary)),
+                if (stepper != null) ...[
+                  const SizedBox(height: 6),
+                  stepper!,
+                ],
+              ]),
+        ),
+        const SizedBox(width: 8),
+        QtyBadge(qty: quantity, isReceipt: isReceipt),
+        if (onDelete != null)
+          IconButton(
+              icon: const Icon(Icons.delete_outline_rounded,
+                  color: AppColors.danger, size: 22),
+              onPressed: onDelete),
+      ]),
     );
   }
 }
 
-/// لوحة مسح بدون حقل إدخال: رسالة + زر مسح فقط.
-/// المسح يصل تلقائيًا عبر scanStream — المستخدم يضغط زر المسح
-/// في الجهاز أو زر "ابدأ المسح" ثم يمسح فيسمع مباشرة.
+/// لوحة مسح — Meadow Green hero.
 class ScanPanel extends StatelessWidget {
   final VoidCallback onTriggerScan;
   final int scannedCount;
@@ -305,53 +247,67 @@ class ScanPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      color: AppTheme.navy,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Icon(Icons.document_scanner_rounded,
-              color: Colors.white, size: 32),
-          const SizedBox(height: 6),
-          Text(message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                  height: 1.5)),
-          const SizedBox(height: 3),
-          Text('امسح بالزر الفيزيائي أو زر البدء — يسمع تلقائيًا بدون كتابة',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white.withValues(alpha: .85))),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: AppTheme.navy,
-                padding:
-                    const EdgeInsets.symmetric(vertical: 12),
-              ),
-              onPressed: onTriggerScan,
-              icon: const Icon(
-                  Icons.qr_code_scanner_rounded,
-                  size: 22),
-              label: Text(
-                  scannedCount > 0
-                      ? 'مسح صنف آخر ($scannedCount ممسوح)'
-                      : 'ابدأ المسح الآن',
-                  style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800)),
-            ),
-          ),
-        ]),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: AppColors.heroGradient,
+        borderRadius:
+            BorderRadius.circular(AppDimensions.radiusCard),
       ),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: .16),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const Icon(Icons.document_scanner_rounded,
+              color: Colors.white, size: 28),
+        ),
+        const SizedBox(height: 10),
+        Text(message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                fontFamily: AppTextStyles.family,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+                height: 1.5)),
+        const SizedBox(height: 4),
+        Text('امسح بالزر الفيزيائي أو زر البدء — يسمع تلقائيًا بدون كتابة',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontFamily: AppTextStyles.family,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.white.withValues(alpha: .85))),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: AppColors.primaryDark,
+              minimumSize: const Size(64, 50),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
+            ),
+            onPressed: onTriggerScan,
+            icon: const Icon(Icons.qr_code_scanner_rounded,
+                size: 22),
+            label: Text(
+                scannedCount > 0
+                    ? 'مسح صنف آخر ($scannedCount ممسوح)'
+                    : 'ابدأ المسح الآن',
+                style: const TextStyle(
+                    fontFamily: AppTextStyles.family,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800)),
+          ),
+        ),
+      ]),
     );
   }
 }
@@ -359,26 +315,11 @@ class ScanPanel extends StatelessWidget {
 class EmptyState extends StatelessWidget {
   final String message;
   final IconData icon;
-  const EmptyState({super.key, required this.message, this.icon = Icons.inbox});
+  const EmptyState({super.key, required this.message, this.icon = Icons.inbox_outlined});
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 44, color: Colors.grey.shade400),
-          const SizedBox(height: 8),
-          Text(message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.inkSoft,
-                  height: 1.6)),
-        ]),
-      ),
-    );
+    return AppEmptyState(message: message, icon: icon);
   }
 }
 
@@ -391,23 +332,31 @@ class QtyStepper extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = TextEditingController(text: _fmt(value));
     return Row(mainAxisSize: MainAxisSize.min, children: [
-      IconButton(
-          icon: const Icon(Icons.remove_circle_outline,
-              size: 22, color: AppTheme.navy),
-          onPressed: () => onChanged((value - 1).clamp(0, 9999999).toDouble())),
+      _stepBtn(
+        icon: Icons.remove_rounded,
+        color: AppColors.primaryDark,
+        onTap: () =>
+            onChanged((value - 1).clamp(0, 9999999).toDouble()),
+      ),
+      const SizedBox(width: 4),
       SizedBox(
-        width: 64,
+        width: 72,
         child: TextField(
           controller: c,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          keyboardType:
+              const TextInputType.numberWithOptions(decimal: true),
           textAlign: TextAlign.center,
+          textDirection: TextDirection.ltr,
           style: const TextStyle(
-              fontSize: 15, fontWeight: FontWeight.w800, color: AppTheme.ink),
+              fontFamily: AppTextStyles.family,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: AppColors.textPrimary),
           decoration: InputDecoration(
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-            border:
-                OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+            contentPadding: const EdgeInsets.symmetric(
+                horizontal: 6, vertical: 10),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(11)),
           ),
           inputFormatters: [
             FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
@@ -416,20 +365,41 @@ class QtyStepper extends StatelessWidget {
               onChanged(double.tryParse(v) ?? value),
         ),
       ),
-      IconButton(
-          icon: const Icon(Icons.add_circle_outline,
-              size: 22, color: AppTheme.success),
-          onPressed: () => onChanged(value + 1)),
+      const SizedBox(width: 4),
+      _stepBtn(
+        icon: Icons.add_rounded,
+        color: AppColors.successStrong,
+        onTap: () => onChanged(value + 1),
+      ),
     ]);
+  }
+
+  Widget _stepBtn(
+      {required IconData icon,
+      required Color color,
+      required VoidCallback onTap}) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(11),
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(11),
+          border:
+              Border.all(color: color.withValues(alpha: .3)),
+        ),
+        child: Icon(icon, size: 22, color: color),
+      ),
+    );
   }
 
   String _fmt(double v) =>
       v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
 }
 
-/// شريط المسح الموحد: زر مسح + حقل يدوي (keyboard-wedge يدخل هنا تلقائيًا)
-/// ملاحظة: شاشات الأذون الجديدة تستخدم ScanPanel (بدون حقل) —
-/// هذا الشريط باقٍ للجرد والبحث فقط.
+/// شريط المسح الموحد: زر مسح + حقل يدوي
 class ScanBar extends StatelessWidget {
   final TextEditingController controller;
   final VoidCallback onTriggerScan;
@@ -445,34 +415,43 @@ class ScanBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Row(children: [
-          Expanded(
-            child: TextField(
-              controller: controller,
-              autofocus: false,
-              textInputAction: TextInputAction.done,
-              style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: AppTheme.ink),
-              decoration: InputDecoration(
-                  hintText: hint, prefixIcon: const Icon(Icons.qr_code, size: 20)),
-              onSubmitted: onSubmit,
-            ),
+    return AppCard(
+      padding: const EdgeInsets.all(10),
+      child: Row(children: [
+        Expanded(
+          child: TextField(
+            controller: controller,
+            autofocus: false,
+            textInputAction: TextInputAction.done,
+            style: const TextStyle(
+                fontFamily: AppTextStyles.family,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary),
+            decoration: InputDecoration(
+                hintText: hint,
+                prefixIcon:
+                    const Icon(Icons.qr_code_rounded, size: 21)),
+            onSubmitted: onSubmit,
           ),
-          const SizedBox(width: 8),
-          FilledButton.icon(
-            onPressed: onTriggerScan,
-            icon: const Icon(Icons.document_scanner_outlined, size: 20),
-            label: const Text('مسح',
-                style: TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w800)),
+        ),
+        const SizedBox(width: 8),
+        ElevatedButton.icon(
+          onPressed: onTriggerScan,
+          icon: const Icon(Icons.document_scanner_outlined,
+              size: 20),
+          label: const Text('مسح',
+              style: TextStyle(
+                  fontFamily: AppTextStyles.family,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800)),
+          style: ElevatedButton.styleFrom(
+            minimumSize: const Size(88, 48),
+            padding: const EdgeInsets.symmetric(
+                horizontal: 14, vertical: 10),
           ),
-        ]),
-      ),
+        ),
+      ]),
     );
   }
 }
@@ -480,37 +459,51 @@ class ScanBar extends StatelessWidget {
 Future<void> showError(BuildContext context, Object e) {
   return showDialog(
     context: context,
-    builder: (_) => AlertDialog(
-      title: const Text('تنبيه',
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
-      content: Text(e.toString().replaceAll('Exception: ', ''),
+    builder: (_) => AppDialog(
+      title: 'تنبيه',
+      content: Text(
+          e.toString().replaceAll('Exception: ', ''),
           style: const TextStyle(
-              fontSize: 13, fontWeight: FontWeight.w600, height: 1.6)),
+              fontFamily: AppTextStyles.family,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              height: 1.6)),
       actions: [
-        TextButton(
+        AppButton(
+            label: 'حسنًا',
             onPressed: () => Navigator.pop(context),
-            child: const Text('حسنًا'))
+            expanded: false),
       ],
     ),
   );
 }
 
-Future<bool> confirm(BuildContext context, String msg) async {
+Future<bool> confirm(BuildContext context, String msg,
+    {String title = 'تأكيد'}) async {
+  final isDelete = title.contains('حذف') || msg.contains('حذف');
   final r = await showDialog<bool>(
     context: context,
-    builder: (_) => AlertDialog(
-      title: const Text('تأكيد',
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+    builder: (_) => AppDialog(
+      title: isDelete ? 'تأكيد الحذف' : title,
       content: Text(msg,
           style: const TextStyle(
-              fontSize: 13, fontWeight: FontWeight.w600, height: 1.6)),
+              fontFamily: AppTextStyles.family,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              height: 1.6)),
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: const Text('إلغاء')),
-        FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('تأكيد')),
+        isDelete
+            ? AppButton.danger(
+                label: 'حذف',
+                onPressed: () => Navigator.pop(context, true),
+                expanded: false)
+            : AppButton(
+                label: 'تأكيد',
+                onPressed: () => Navigator.pop(context, true),
+                expanded: false),
       ],
     ),
   );
@@ -522,19 +515,36 @@ Future<bool> productNotFoundDialog(
     BuildContext context, String barcode) async {
   final r = await showDialog<bool>(
     context: context,
-    builder: (_) => AlertDialog(
-      title: const Text('الصنف غير موجود',
-          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
-      content: Text('الباركود: $barcode\n\nهل تريد إضافة هذا الصنف؟',
-          style: const TextStyle(
-              fontSize: 13, fontWeight: FontWeight.w600, height: 1.6)),
+    builder: (_) => AppDialog(
+      title: 'الصنف غير موجود',
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('الباركود: $barcode',
+              textDirection: TextDirection.ltr,
+              style: const TextStyle(
+                  fontFamily: AppTextStyles.family,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          const Text('هل تريد إضافة هذا الصنف؟',
+              style: TextStyle(
+                  fontFamily: AppTextStyles.family,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  height: 1.6)),
+        ],
+      ),
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: const Text('إلغاء')),
-        FilledButton(
+        AppButton(
+            label: 'إضافة صنف',
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('إضافة صنف')),
+            expanded: false,
+            icon: Icons.add_rounded),
       ],
     ),
   );
@@ -544,6 +554,527 @@ Future<bool> productNotFoundDialog(
 void toast(BuildContext context, String msg) {
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg,
-          style:
-              const TextStyle(fontSize: 12, fontWeight: FontWeight.w700))));
+          style: const TextStyle(
+              fontFamily: AppTextStyles.family,
+              fontSize: 13,
+              fontWeight: FontWeight.w700))));
+}
+
+/// صف خلية واحد لجدول الأصناف (نظام الخلايا بدل الكروت).
+class CellLineData {
+  final String code;
+  final String name;
+  final double qty;
+  final double weight;
+  final double price;
+  const CellLineData({
+    required this.code,
+    required this.name,
+    required this.qty,
+    this.weight = 0,
+    this.price = 0,
+  });
+}
+
+/// جدول خلايا: الصنف | كمية | وزن | سعر | حذف.
+/// - المسح المتكرر لنفس الصنف يدمج في نفس الصف (المنطق في الـ repo / _pushLine).
+/// - الخلايا الرقمية قابلة للتعديل المباشر (تحدّث الكمية/الوزن/السعر).
+class LinesCellTable extends StatelessWidget {
+  final List<CellLineData> rows;
+  final ValueChanged<int>? onDelete;
+  final ValueChanged<int>? onEdit;
+  final void Function(int index, double value)? onQtyChanged;
+  final void Function(int index, double value)? onWeightChanged;
+  final void Function(int index, double value)? onPriceChanged;
+  final bool showPrice;
+  final bool editable;
+  const LinesCellTable({
+    super.key,
+    required this.rows,
+    this.onDelete,
+    this.onEdit,
+    this.onQtyChanged,
+    this.onWeightChanged,
+    this.onPriceChanged,
+    this.showPrice = true,
+    this.editable = true,
+  });
+
+  String _f(double v) =>
+      v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
+  String _f2(double v) => v.toStringAsFixed(2);
+
+  @override
+  Widget build(BuildContext context) {
+    if (rows.isEmpty) return const SizedBox.shrink();
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        // هيدر الخلايا
+        Container(
+          color: AppColors.primaryDark,
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          child: Row(children: [
+            const Expanded(
+                flex: 4,
+                child: Text('الصنف',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontFamily: AppTextStyles.family,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white))),
+            const Expanded(
+                flex: 2,
+                child: Text('كمية',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontFamily: AppTextStyles.family,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white))),
+            const Expanded(
+                flex: 2,
+                child: Text('وزن',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontFamily: AppTextStyles.family,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white))),
+            if (showPrice)
+              const Expanded(
+                  flex: 2,
+                  child: Text('سعر',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          fontFamily: AppTextStyles.family,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white))),
+            if (onDelete != null || onEdit != null)
+              SizedBox(
+                  width: (onDelete != null && onEdit != null) ? 72 : 36,
+                  child: const Text('',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white))),
+          ]),
+        ),
+        ...rows.asMap().entries.map((e) {
+          final i = e.key;
+          final r = e.value;
+          return Container(
+            decoration: BoxDecoration(
+              color: i.isEven ? Colors.white : const Color(0xFFF6F8F6),
+              border: const Border(
+                  top: BorderSide(color: AppColors.border, width: .6)),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+              // خلية الصنف: اسم + كود
+              Expanded(
+                flex: 4,
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(r.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontFamily: AppTextStyles.family,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.textPrimary)),
+                      Text(r.code,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textDirection: TextDirection.ltr,
+                          style: const TextStyle(
+                              fontFamily: AppTextStyles.family,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textSecondary)),
+                    ]),
+              ),
+              // خلية الكمية
+              Expanded(
+                  flex: 2,
+                  child: _NumCell(
+                    key: ValueKey('q-$i-${r.qty}'),
+                    initial: _f(r.qty),
+                    editable: editable && onQtyChanged != null,
+                    onSubmit: (v) => onQtyChanged?.call(i, v),
+                  )),
+              // خلية الوزن
+              Expanded(
+                  flex: 2,
+                  child: _NumCell(
+                    key: ValueKey('w-$i-${r.weight}'),
+                    initial: _f2(r.weight),
+                    editable: editable && onWeightChanged != null,
+                    onSubmit: (v) => onWeightChanged?.call(i, v),
+                  )),
+              // خلية السعر
+              if (showPrice)
+                Expanded(
+                    flex: 2,
+                    child: _NumCell(
+                      key: ValueKey('p-$i-${r.price}'),
+                      initial: _f(r.price),
+                      editable: editable && onPriceChanged != null,
+                      onSubmit: (v) => onPriceChanged?.call(i, v),
+                    )),
+              if (onEdit != null)
+                SizedBox(
+                  width: 36,
+                  child: IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                          minWidth: 36, minHeight: 36),
+                      icon: const Icon(Icons.edit_outlined,
+                          color: AppColors.primaryDark, size: 20),
+                      onPressed: () => onEdit!(i)),
+                ),
+              if (onDelete != null)
+                SizedBox(
+                  width: 36,
+                  child: IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                          minWidth: 36, minHeight: 36),
+                      icon: const Icon(Icons.delete_outline_rounded,
+                          color: AppColors.danger, size: 20),
+                      onPressed: () => onDelete!(i)),
+                ),
+            ]),
+          );
+        }),
+      ]),
+    );
+  }
+}
+
+/// خلية رقمية قابلة للتحرير المباشر داخل الجدول.
+class _NumCell extends StatefulWidget {
+  final String initial;
+  final bool editable;
+  final ValueChanged<double> onSubmit;
+  const _NumCell(
+      {super.key,
+      required this.initial,
+      required this.editable,
+      required this.onSubmit});
+  @override
+  State<_NumCell> createState() => _NumCellState();
+}
+
+class _NumCellState extends State<_NumCell> {
+  late final TextEditingController c =
+      TextEditingController(text: widget.initial);
+  @override
+  void dispose() {
+    c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.editable) {
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1F4F1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(widget.initial,
+            textAlign: TextAlign.center,
+            textDirection: TextDirection.ltr,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+                fontFamily: AppTextStyles.family,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary)),
+      );
+    }
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 2),
+      child: TextField(
+        controller: c,
+        keyboardType:
+            const TextInputType.numberWithOptions(decimal: true),
+        textAlign: TextAlign.center,
+        textDirection: TextDirection.ltr,
+        style: const TextStyle(
+            fontFamily: AppTextStyles.family,
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            color: AppColors.textPrimary),
+        decoration: InputDecoration(
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          border:
+              OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          isDense: true,
+        ),
+        inputFormatters: [
+          FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
+        ],
+        onSubmitted: (v) {
+          final n = double.tryParse(v.trim()) ?? -1;
+          if (n < 0) {
+            c.text = widget.initial;
+            return;
+          }
+          widget.onSubmit(n);
+        },
+      ),
+    );
+  }
+}
+
+/// تجميع سطور مسح خام (كل مسحة عنصر) إلى صف واحد لكل صنف.
+/// يُستخدم في شاشات الإنشاء قبل الحفظ (العناصر [DocLine] حية وقابلة للتعديل).
+class MergedDocLine {
+  final String code;
+  String name;
+  double qty = 0;
+  double weight = 0;
+  double price = 0;
+  final List<DocLine> scans = [];
+  MergedDocLine({required this.code, required this.name});
+}
+
+/// تجميع قائمة [DocLine] خام (كل مسحة عنصر مستقل) إلى صف واحد لكل صنف:
+/// كمية = المجموع، وزن = المجموع، سعر = الأحدث.
+List<MergedDocLine> mergeDocLines(List<DocLine> lines) {
+  final map = <String, MergedDocLine>{};
+  final order = <String>[];
+  for (final l in lines) {
+    var g = map[l.productCode];
+    if (g == null) {
+      g = MergedDocLine(code: l.productCode, name: l.productName);
+      map[l.productCode] = g;
+      order.add(l.productCode);
+    }
+    g.qty += l.quantity;
+    g.weight += l.weight;
+    g.price = l.price;
+    if (l.productName.isNotEmpty) g.name = l.productName;
+    g.scans.add(l);
+  }
+  return [for (final c in order) map[c]!];
+}
+
+/// حوار تفصيلة مسحات صنف (قبل الحفظ): كل مسحة في صف مستقل بوزنها
+/// (للأوزان المتغيرة كل كرتونة في صف) مع تعديل الوزن/السعر وحذف أي مسحة.
+/// يعمل على نفس كائنات [DocLine] الحية — أي تعديل ينعكس على قائمة الأب
+/// عبر [onChanged]، والحذف عبر [onDelete].
+class ScansBreakdownDialog extends StatefulWidget {
+  final String productName;
+  final String productCode;
+  final List<DocLine> scans;
+  final VoidCallback onChanged;
+  final void Function(DocLine scan) onDelete;
+  const ScansBreakdownDialog({
+    super.key,
+    required this.productName,
+    required this.productCode,
+    required this.scans,
+    required this.onChanged,
+    required this.onDelete,
+  });
+  @override
+  State<ScansBreakdownDialog> createState() => _ScansBreakdownDialogState();
+}
+
+class _ScansBreakdownDialogState extends State<ScansBreakdownDialog> {
+  late List<DocLine> scans = [...widget.scans];
+  final priceAllC = TextEditingController();
+
+  @override
+  void dispose() {
+    priceAllC.dispose();
+    super.dispose();
+  }
+
+  String _f(double v) =>
+      v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
+  String _f2(double v) => v.toStringAsFixed(2);
+
+  void _onDeleteScan(DocLine s) {
+    widget.onDelete(s); // الأب يحذف من قائمته
+    setState(() => scans.remove(s));
+    widget.onChanged(); // الأب يعيد البناء
+  }
+
+  void _onScanChanged() {
+    setState(() {}); // إعادة حساب الإجماليات
+    widget.onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final totalQty = scans.fold(0.0, (a, b) => a + b.quantity);
+    final totalWeight = scans.fold(0.0, (a, b) => a + b.weight);
+    return AlertDialog(
+      title: Text('${widget.productName} (${scans.length} مسحات)',
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+              fontFamily: AppTextStyles.family,
+              fontSize: 16,
+              fontWeight: FontWeight.w800)),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: scans.isEmpty
+            ? const Text('لا توجد مسحات — احذف الصنف من الجدول',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontFamily: AppTextStyles.family, fontSize: 14))
+            : SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                        'الإجمالي: كمية ${_f(totalQty)} — وزن ${_f2(totalWeight)}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            fontFamily: AppTextStyles.family,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 8),
+                    Row(children: [
+                      Expanded(
+                        child: TextField(
+                          controller: priceAllC,
+                          keyboardType:
+                              const TextInputType.numberWithOptions(
+                                  decimal: true),
+                          textDirection: TextDirection.ltr,
+                          decoration: const InputDecoration(
+                              labelText: 'سعر موحد للكل', isDense: true),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton.tonal(
+                          onPressed: () {
+                            final np =
+                                AppUtils.parseNum(priceAllC.text);
+                            if (np <= 0) return;
+                            for (final s in scans) {
+                              s.price = np;
+                            }
+                            priceAllC.clear();
+                            _onScanChanged();
+                          },
+                          child: const Text('توحيد')),
+                    ]),
+                    const SizedBox(height: 8),
+                    ...scans.asMap().entries.map((e) {
+                      final i = e.key;
+                      final s = e.value;
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: i.isEven
+                              ? const Color(0xFFF6F8F6)
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                              color: const Color(0xFFD9E2E3)),
+                        ),
+                        child: Row(children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text('مسحة #${i + 1}',
+                                    style: const TextStyle(
+                                        fontFamily:
+                                            AppTextStyles.family,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w800)),
+                                Text(
+                                    'كمية ${_f(s.quantity)} | سعر ${_f(s.price)}',
+                                    textDirection: TextDirection.ltr,
+                                    style: const TextStyle(
+                                        fontFamily:
+                                            AppTextStyles.family,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black54)),
+                              ],
+                            ),
+                          ),
+                          SizedBox(
+                            width: 84,
+                            child: TextFormField(
+                              key: ValueKey(
+                                  'w-${widget.productCode}-$i-${s.weight}'),
+                              initialValue: _f2(s.weight),
+                              keyboardType: const TextInputType
+                                  .numberWithOptions(decimal: true),
+                              textAlign: TextAlign.center,
+                              textDirection: TextDirection.ltr,
+                              style: const TextStyle(
+                                  fontFamily: AppTextStyles.family,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800),
+                              decoration: const InputDecoration(
+                                  labelText: 'الوزن',
+                                  isDense: true,
+                                  contentPadding:
+                                      EdgeInsets.symmetric(
+                                          horizontal: 4,
+                                          vertical: 8)),
+                              onFieldSubmitted: (v) {
+                                final n =
+                                    AppUtils.parseNum(v);
+                                if (n < 0) return;
+                                s.weight = n;
+                                _onScanChanged();
+                              },
+                            ),
+                          ),
+                          SizedBox(
+                            width: 36,
+                            child: IconButton(
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                    minWidth: 36, minHeight: 36),
+                                icon: const Icon(
+                                    Icons.delete_outline_rounded,
+                                    color: AppColors.danger,
+                                    size: 20),
+                                onPressed: () =>
+                                    _onDeleteScan(s)),
+                          ),
+                        ]),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+      ),
+      actions: [
+        FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('تم')),
+      ],
+    );
+  }
 }

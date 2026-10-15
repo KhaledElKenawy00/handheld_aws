@@ -5,6 +5,7 @@ import 'app.dart';
 import 'core/database/database_helper.dart';
 import 'core/scanner/scanner_providers.dart';
 import 'core/scanner/scanner_service.dart';
+import 'core/scanner/sunmi_scanner_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,6 +19,19 @@ Future<void> main() async {
   final ScannerService scanner = sunmiServiceSingleton;
   try {
     await scanner.initialize();
+    // طبّق إعدادات السكانر المحفوظة (debounce) — يدعم L2s Pro بدون تهنيج
+    // من المسح المزدوج.
+    try {
+      final db = await DatabaseHelper.instance.db;
+      final rows = await db.query('app_settings',
+          where: 'key=?', whereArgs: ['scanner_debounce_ms']);
+      final ms = rows.isNotEmpty
+          ? int.tryParse((rows.first['value'] ?? '400').toString()) ?? 400
+          : 400;
+      if (scanner is SunmiScannerService) {
+        scanner.configure(ScannerConfig(debounceMs: ms.clamp(100, 2000)));
+      }
+    } catch (_) {}
   } catch (e) {
     debugPrint('scanner init failed: $e');
   }

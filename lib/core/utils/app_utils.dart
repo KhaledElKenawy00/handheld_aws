@@ -15,6 +15,37 @@ class AppUtils {
     return q.toString();
   }
 
+  /// تحويل رقم مدخل بأي لوحة مفاتيح إلى double — يحوّل الأرقام العربية
+  /// (٠١٢٣٤٥٦٧٨٩) والفارسية (۰۱۲۳۴۵۶۷۸۹) والفاصلة العربية (٫) إلى ASCII
+  /// قبل التحليل، حتى "يسمع" السعر/الوزن المكتوب بالعربي بدل اعتباره صفرًا.
+  /// مثال: "٢٥٠٫٥" ← 250.5
+  static double parseNum(String raw) {
+    var s = raw.trim();
+    if (s.isEmpty) return 0;
+    const ar = '٠١٢٣٤٥٦٧٨٩';
+    const fa = '۰۱۲۳۴۵۶۷۸۹';
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      final ch = s[i];
+      final ai = ar.indexOf(ch);
+      if (ai >= 0) {
+        buf.write(ai);
+        continue;
+      }
+      final fi = fa.indexOf(ch);
+      if (fi >= 0) {
+        buf.write(fi);
+        continue;
+      }
+      if (ch == '٫') {
+        buf.write('.');
+        continue;
+      }
+      buf.write(ch);
+    }
+    return double.tryParse(buf.toString().trim()) ?? 0;
+  }
+
   static String sanitizeFileName(String s) {
     return s.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
   }

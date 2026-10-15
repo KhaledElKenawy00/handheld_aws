@@ -12,6 +12,7 @@ import '../../../core/pagination/pagination.dart';
 import '../../../core/providers.dart';
 import '../../../core/scanner/scanner_providers.dart';
 import '../../../core/utils/app_utils.dart';
+import '../../../core/theme/app_colors.dart';
 import '../../../shared/models/entities.dart';
 import '../../../shared/widgets/common.dart';
 import '../../../shared/widgets/pagination_bar.dart';
@@ -61,11 +62,11 @@ class InventoryScreen extends ConsumerWidget {
                   child: ListTile(
                     leading: Icon(
                         ss[i].status == 'closed'
-                            ? Icons.lock
-                            : Icons.fact_check,
+                            ? Icons.lock_rounded
+                            : Icons.fact_check_rounded,
                         color: ss[i].status == 'closed'
                             ? Colors.grey
-                            : Colors.purple),
+                            : AppColors.primary),
                     title: Text(ss[i].id),
                     subtitle: Text('${ss[i].date} — ${ss[i].status == 'closed' ? 'مغلق' : 'مفتوح'}'),
                     trailing: const Icon(Icons.chevron_left),
@@ -212,7 +213,7 @@ class _ID extends ConsumerState<InventoryDetailsScreen> {
   String filter = 'all'; // all | shortage | excess | matched
   String query = '';
   int _page = 0;
-  static const int _pageSize = 30;
+  static const int _pageSize = 10;
   // حد التصدير الكامل (PDF/Excel) — إجراء صريح من المستخدم فيشمل كل البنود
   static const int _exportLimit = 1 << 20;
 
@@ -255,7 +256,7 @@ class _ID extends ConsumerState<InventoryDetailsScreen> {
       sub = ref
           .read(scannerServiceProvider)
           .scanStream
-          .listen((c) => _scan(c.trim()));
+          .listen((c) => _scan(c.trim().replaceAll(RegExp(r'\s+'), '')));
     } catch (_) {}
   }
 

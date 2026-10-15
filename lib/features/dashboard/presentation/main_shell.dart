@@ -10,8 +10,10 @@ import '../../stock/presentation/stock_screen.dart';
 import '../../reports/presentation/reports_screen.dart';
 import '../../suppliers/presentation/suppliers_screen.dart';
 import '../../customers/presentation/customers_screen.dart';
+import '../../../shared/widgets/app_ui.dart';
 
-/// التنقل الرئيسي — BottomNavigation مناسب لشاشة SUNMI L2s Pro
+/// التنقل الرئيسي — BottomNavigation مناسب لشاشة SUNMI L2s Pro.
+/// RTL + Meadow Green indicator.
 class MainShell extends ConsumerStatefulWidget {
   const MainShell({super.key});
   @override
@@ -32,34 +34,34 @@ class _MainShellState extends ConsumerState<MainShell> {
       SettingsScreen(),
     ];
     return Scaffold(
-      body: pages[idx],
+      body: IndexedStack(index: idx, children: pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: idx,
         onDestinationSelected: (i) => setState(() => idx = i),
         destinations: const [
           NavigationDestination(
               icon: Icon(Icons.dashboard_outlined),
-              selectedIcon: Icon(Icons.dashboard),
+              selectedIcon: Icon(Icons.dashboard_rounded),
               label: 'الرئيسية'),
           NavigationDestination(
               icon: Icon(Icons.inventory_2_outlined),
-              selectedIcon: Icon(Icons.inventory_2),
+              selectedIcon: Icon(Icons.inventory_2_rounded),
               label: 'المخزون'),
           NavigationDestination(
               icon: Icon(Icons.receipt_long_outlined),
-              selectedIcon: Icon(Icons.receipt_long),
+              selectedIcon: Icon(Icons.receipt_long_rounded),
               label: 'المعاملات'),
           NavigationDestination(
-              icon: Icon(Icons.people_outline),
-              selectedIcon: Icon(Icons.people),
+              icon: Icon(Icons.people_outline_rounded),
+              selectedIcon: Icon(Icons.people_rounded),
               label: 'الأطراف'),
           NavigationDestination(
               icon: Icon(Icons.bar_chart_outlined),
-              selectedIcon: Icon(Icons.bar_chart),
+              selectedIcon: Icon(Icons.bar_chart_rounded),
               label: 'التقارير'),
           NavigationDestination(
               icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings),
+              selectedIcon: Icon(Icons.settings_rounded),
               label: 'الإعدادات'),
         ],
       ),
@@ -74,8 +76,8 @@ class TransactionsTabs extends StatelessWidget {
     return DefaultTabController(
       length: 3,
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('المعاملات'),
+        appBar: AppHeader.appBar(
+          'المعاملات',
           bottom: const TabBar(tabs: [
             Tab(text: 'استلام'),
             Tab(text: 'تسليم'),
@@ -99,8 +101,8 @@ class PartiesTabs extends StatelessWidget {
     return DefaultTabController(
       length: 3,
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('الأطراف'),
+        appBar: AppHeader.appBar(
+          'الأطراف',
           bottom: const TabBar(tabs: [
             Tab(text: 'الأصناف'),
             Tab(text: 'الموردين'),

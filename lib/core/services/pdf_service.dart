@@ -259,6 +259,28 @@ class PdfService {
           cs.map((e) => [e.code, ar(e.desc)]).toList(),
           folder, 'customers.pdf');
 
+  Future<String> warehousesListPdf(
+          List<Warehouse> ws, String folder) =>
+      _listDoc('المخازن',
+          ['Code', ar('الاسم')],
+          ws.map((e) => [e.code, ar(e.name)]).toList(),
+          folder, 'warehouses.pdf');
+
+  Future<String> opsListPdf(List<OpHeader> hs, String folder) =>
+      _listDoc('العمليات (مرتجعات / تحويلات)',
+          [ar('النوع'), ar('الرقم'), ar('الطرف'), ar('التاريخ'), ar('أصناف'), ar('كمية')],
+          hs
+              .map((h) => [
+                    ar(h.kind),
+                    '${h.number}',
+                    ar(h.partyName),
+                    h.date,
+                    '${h.totalItems}',
+                    AppUtils.fmtQty(h.totalQty)
+                  ])
+              .toList(),
+          folder, 'operations.pdf');
+
   Future<String> receiptsListPdf(
           List<ReceiptHeader> hs, String folder) =>
       _listDoc('أذون الاستلام',

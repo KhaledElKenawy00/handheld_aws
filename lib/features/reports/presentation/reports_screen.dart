@@ -2,80 +2,183 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../../core/theme/app_dimensions.dart';
 import '../../../core/utils/app_utils.dart';
+import '../../../shared/widgets/app_ui.dart';
 import '../../receipts/presentation/receipts_screen.dart';
 import '../../deliveries/presentation/deliveries_screen.dart';
 import '../../inventory/presentation/inventory_screen.dart';
 
-/// التقارير: ملخص + فتح المستندات + تصدير
+/// التقارير: ملخص + فتح المستندات + تصدير — Meadow Green.
 class ReportsScreen extends ConsumerWidget {
   const ReportsScreen({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final dash = ref.watch(dashboardProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('التقارير')),
-      body: ListView(padding: const EdgeInsets.all(12), children: [
-        dash.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Text('$e'),
-          data: (m) => Card(
-              child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('ملخص النشاط',
-                            style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold)),
-                        Text('الأصناف: ${m['products']}'),
-                        Text('الموردون: ${m['suppliers']}'),
-                        Text('العملاء: ${m['customers']}'),
-                        Text('أذون الاستلام: ${m['receipts']}'),
-                        Text('أذون التسليم: ${m['deliveries']}'),
-                        Text('الجرد: ${m['inventory']}'),
-                      ]))),
-        ),
-        const SizedBox(height: 8),
-        _tile(context, 'أذون الاستلام', Icons.arrow_downward,
-            const ReceiptsScreen()),
-        _tile(context, 'أذون التسليم', Icons.arrow_upward,
-            const DeliveriesScreen()),
-        _tile(context, 'تقارير الجرد', Icons.fact_check,
-            const InventoryScreen()),
-        const SizedBox(height: 8),
-        const Text('إجمالي قيمة المخزون (كمية فقط — بدون أسعار في V1)',
-            style: TextStyle(color: Colors.grey)),
-        FutureBuilder(
-          future: ref.read(productRepoProvider).stockTotals(),
-          builder: (_, snap) {
-            if (!snap.hasData) return const SizedBox();
-            final t = snap.data!;
-            final total = t['total'] ?? 0;
-            final zero = (t['zero'] ?? 0).toInt();
-            final count = (t['count'] ?? 0).toInt();
-            return Card(
-                child: ListTile(
-              title:
-                  Text('إجمالي الوحدات بالمخزن: ${AppUtils.fmtQty(total)}'),
-              subtitle: Text('أصناف نفدت: $zero من $count'),
-            ));
-          },
-        ),
-      ]),
+      appBar: AppHeader.appBar('التقارير'),
+      body: ListView(
+        padding: const EdgeInsets.all(AppDimensions.padPage),
+        children: [
+          dash.when(
+            loading: () => const AppCard(child: AppLoading()),
+            error: (e, _) => AppErrorState(
+                message: '$e',
+                onRetry: () =>
+                    ref.invalidate(dashboardProvider)),
+            data: (m) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const AppSectionTitle(title: 'ملخص النشاط'),
+                const SizedBox(height: 8),
+                GridView.count(
+                  crossAxisCount: AppDimensions.gridColumns(
+                      context,
+                      wide: 2),
+                  shrinkWrap: true,
+                  physics:
+                      const NeverScrollableScrollPhysics(),
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  childAspectRatio:
+                      AppDimensions.gridAspect(context),
+                  children: [
+                    AppStatCard(
+                        title: 'الأصناف',
+                        value: '${m['products']}',
+                        icon: Icons.inventory_2_rounded,
+                        color: AppColors.primary),
+                    AppStatCard(
+                        title: 'الموردون',
+                        value: '${m['suppliers']}',
+                        icon:
+                            Icons.local_shipping_rounded,
+                        color: AppColors.meadow800),
+                    AppStatCard(
+                        title: 'العملاء',
+                        value: '${m['customers']}',
+                        icon: Icons.people_rounded,
+                        color: AppColors.secondary),
+                    AppStatCard(
+                        title: 'أذون الاستلام',
+                        value: '${m['receipts']}',
+                        icon: Icons.arrow_downward_rounded,
+                        color: AppColors.successStrong),
+                    AppStatCard(
+                        title: 'أذون التسليم',
+                        value: '${m['deliveries']}',
+                        icon: Icons.arrow_upward_rounded,
+                        color: AppColors.warning),
+                    AppStatCard(
+                        title: 'الجرد',
+                        value: '${m['inventory']}',
+                        icon: Icons.fact_check_rounded,
+                        color: AppColors.meadow900),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const AppSectionTitle(title: 'المستندات'),
+          const SizedBox(height: 8),
+          AppActionCard(
+              title: 'أذون الاستلام',
+              subtitle: 'عرض وطباعة وتصدير',
+              icon: Icons.arrow_downward_rounded,
+              color: AppColors.successStrong,
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) =>
+                          const ReceiptsScreen()))),
+          AppActionCard(
+              title: 'أذون التسليم',
+              subtitle: 'عرض وطباعة وتصدير',
+              icon: Icons.arrow_upward_rounded,
+              color: AppColors.warning,
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) =>
+                          const DeliveriesScreen()))),
+          AppActionCard(
+              title: 'تقارير الجرد',
+              subtitle: 'الجلسات والفروقات',
+              icon: Icons.fact_check_rounded,
+              color: AppColors.meadow900,
+              onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) =>
+                          const InventoryScreen()))),
+          const SizedBox(height: 16),
+          const AppSectionTitle(title: 'المخزون'),
+          const SizedBox(height: 8),
+          FutureBuilder(
+            future: ref.read(productRepoProvider).stockTotals(),
+            builder: (_, snap) {
+              if (!snap.hasData) {
+                return const AppCard(child: AppLoading());
+              }
+              final t = snap.data!;
+              final total = t['total'] ?? 0;
+              final zero = (t['zero'] ?? 0).toInt();
+              final count = (t['count'] ?? 0).toInt();
+              return AppCard(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: AppColors.accentSoft,
+                        borderRadius:
+                            BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                          Icons.inventory_rounded,
+                          color: AppColors.primary,
+                          size: 25),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                              'إجمالي الوحدات: ${AppUtils.fmtQty(total)}',
+                              style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight:
+                                      FontWeight.w800,
+                                  color:
+                                      AppColors.textPrimary)),
+                          const SizedBox(height: 2),
+                          Text(
+                              'أصناف نفدت: $zero من $count',
+                              style: const TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors
+                                      .textSecondary)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+          const Text(
+              'إجمالي قيمة المخزون (كمية فقط — بدون أسعار في V1)',
+              style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textMuted)),
+        ],
+      ),
     );
-  }
-
-  Widget _tile(
-      BuildContext context, String t, IconData ic, Widget page) {
-    return Card(
-        child: ListTile(
-      leading: Icon(ic),
-      title: Text(t),
-      trailing: const Icon(Icons.chevron_left),
-      onTap: () => Navigator.push(
-          context, MaterialPageRoute(builder: (_) => page)),
-    ));
   }
 }

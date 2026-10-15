@@ -12,7 +12,8 @@ import 'storage_service.dart';
 import '../../shared/models/entities.dart';
 
 /// الباكب الشامل (النوع 2 = PDF / النوع 3 = Excel):
-/// يصدّر كل البيانات: أصناف + موردين + عملاء + أذون + جرد،
+/// يصدّر كل البيانات: أصناف + موردين + عملاء + مخازن + أذون
+/// (استلام/تسليم) + عمليات (مرتجع عميل/مورد + تحويل داخلي/خارجي)،
 /// + ملف مستقل لكل مورد (كل أذونه بتفاصيلها)
 /// + ملف مستقل لكل عميل (كل أذونه بتفاصيلها)،
 /// ثم يضغط الكل في ZIP واحد للمشاركة/الاحتفاظ.
@@ -70,11 +71,27 @@ class FullExportService {
     return rows.map(DeliveryHeader.fromMap).toList();
   }
 
-  Future<List<InventorySession>> _allInventory() async {
+  Future<List<Warehouse>> _allWarehouses() async {
     final db = await DatabaseHelper.instance.db;
-    final rows =
-        await db.query('inventory_sessions', orderBy: 'date DESC, id DESC');
-    return rows.map(InventorySession.fromMap).toList();
+    final rows = await db.query('warehouses', orderBy: 'code ASC');
+    return rows.map(Warehouse.fromMap).toList();
+  }
+
+  Future<List<OpHeader>> _allOps() async {
+    final db = await DatabaseHelper.instance.db;
+    final rows = await db.query('op_headers', orderBy: 'date DESC, id DESC');
+    return rows.map(OpHeader.fromMap).toList();
+  }
+
+  Future<Map<String, List<OpItem>>> _opItemsById(List<String> ids) async {
+    final db = await DatabaseHelper.instance.db;
+    final map = <String, List<OpItem>>{};
+    for (final id in ids) {
+      final rows =
+          await db.query('op_items', where: 'opId=?', whereArgs: [id]);
+      map[id] = rows.map(OpItem.fromMap).toList();
+    }
+    return map;
   }
 
   Future<Map<String, List<ReceiptItem>>> _receiptItemsById(
@@ -123,17 +140,19 @@ class FullExportService {
     final products = await _allProducts();
     final suppliers = await _allSuppliers();
     final customers = await _allCustomers();
+    final warehouses = await _allWarehouses();
     final receipts = await _allReceipts();
     final deliveries = await _allDeliveries();
-    final sessions = await _allInventory();
+    final ops = await _allOps();
 
-    onStep?.call('الأصناف والموردين والعملاء...');
+    onStep?.call('الأصناف والموردين والعملاء والمخازن...');
     await pdf.productsListPdf(products, root);
     await pdf.suppliersListPdf(suppliers, root);
     await pdf.customersListPdf(customers, root);
+    await pdf.warehousesListPdf(warehouses, root);
     await pdf.receiptsListPdf(receipts, root);
     await pdf.deliveriesListPdf(deliveries, root);
-    await pdf.inventorySessionsPdf(sessions, root);
+    await pdf.opsListPdf(ops, root);
 
     onStep?.call('ملفات الموردين...');
     final supDir = Directory(p.join(root, 'Suppliers'));
@@ -175,32 +194,27 @@ class FullExportService {
     final products = await _allProducts();
     final suppliers = await _allSuppliers();
     final customers = await _allCustomers();
+    final warehouses = await _allWarehouses();
     final receipts = await _allReceipts();
     final deliveries = await _allDeliveries();
-    final sessions = await _allInventory();
+    final ops = await _allOps();
 
-    onStep?.call('الأصناف والموردين والعملاء...');
+    onStep?.call('الأصناف والموردين والعملاء والمخازن...');
     await excel.exportProductsList(products, root);
     await excel.exportSuppliersList(suppliers, root);
     await excel.exportCustomersList(customers, root);
+    await excel.exportWarehousesList(warehouses, root);
     final rItems =
         await _receiptItemsById(receipts.map((e) => e.id).toList());
     await excel.exportReceiptsListWithItems(receipts, rItems, root);
     final dItems =
         await _deliveryItemsById(deliveries.map((e) => e.id).toList());
     await excel.exportDeliveriesListWithItems(deliveries, dItems, root);
-
-    // الجرد بتفاصيله
-    final db = await DatabaseHelper.instance.db;
-    final invMap = <String, List<InventoryItem>>{};
-    for (final s in sessions) {
-      final rows = await db.query('inventory_items',
-          where: 'sessionId=?', whereArgs: [s.id]);
-      invMap[s.id] = rows.map(InventoryItem.fromMap).toList();
-    }
-    await excel.exportInventorySessions(sessions, invMap, root);
+    final oItems = await _opItemsById(ops.map((e) => e.id).toList());
+    await excel.exportOpsListWithItems(ops, oItems, root);
 
     onStep?.call('ملفات الموردين...');
+    final db = await DatabaseHelper.instance.db;
     final supDir = Directory(p.join(root, 'Suppliers'));
     await supDir.create(recursive: true);
     for (final s in suppliers) {
