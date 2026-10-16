@@ -338,9 +338,9 @@ class _OpListState extends ConsumerState<OpListScreen> {
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: .09), blurRadius: 10, offset: const Offset(0, 3)),
+            BoxShadow(color: const Color(0x190B3A5B), blurRadius: 14, offset: const Offset(0, 5)),
           ],
         ),
         child: Column(

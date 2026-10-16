@@ -10,9 +10,7 @@ import '../../stock/presentation/stock_screen.dart';
 import '../../reports/presentation/reports_screen.dart';
 import '../../suppliers/presentation/suppliers_screen.dart';
 import '../../customers/presentation/customers_screen.dart';
-import '../../../core/providers.dart';
 import '../../../shared/widgets/app_ui.dart';
-import '../../../shared/widgets/common.dart';
 
 /// التنقل الرئيسي — BottomNavigation مناسب لشاشة SUNMI L2s Pro.
 /// RTL + Meadow Green indicator.
@@ -24,31 +22,6 @@ class MainShell extends ConsumerStatefulWidget {
 
 class _MainShellState extends ConsumerState<MainShell> {
   int idx = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    // الأرشفة الأسبوعية التلقائية للكمبيوتر (تعمل في الخلفية عند الاستحقاق).
-    WidgetsBinding.instance.addPostFrameCallback((_) => _autoArchive());
-  }
-
-  Future<void> _autoArchive() async {
-    try {
-      final sum = await ref
-          .read(archiveServiceProvider)
-          .runIfDue();
-      if (sum == null || !mounted) return;
-      ref.invalidate(deliveryListProvider);
-      ref.invalidate(receiptListProvider);
-      ref.invalidate(dashboardProvider);
-      if (mounted) {
-        toast(context,
-            'تمت الأرشفة الأسبوعية: ${sum.files} ملف على الكمبيوتر — اتمسح ${sum.deliveries + sum.receipts + sum.returns} إذن');
-      }
-    } catch (e) {
-      if (mounted) showError(context, 'تعذرت الأرشفة الأسبوعية: $e');
-    }
-  }
 
   @override
   Widget build(BuildContext context) {

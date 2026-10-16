@@ -34,13 +34,16 @@ class PaginationBar extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        border: Border(
-          top: BorderSide(
-            color: Theme.of(context).dividerColor.withValues(alpha: .5),
-          ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(18),
+          topRight: Radius.circular(18),
         ),
+        boxShadow: [
+          BoxShadow(
+              color: Color(0x140B3A5B), blurRadius: 12, offset: Offset(0, -3)),
+        ],
       ),
       child: Row(
         children: [

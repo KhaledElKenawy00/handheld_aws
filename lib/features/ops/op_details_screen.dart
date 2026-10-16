@@ -1161,7 +1161,7 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
           borderRadius: BorderRadius.circular(12),
           child: const Padding(
             padding: EdgeInsets.all(8),
-            child: Icon(Icons.save_outlined, color: Colors.black, size: 28),
+            child: Icon(Icons.save_outlined, color: Colors.white, size: 28),
           ),
         ),
         InkWell(

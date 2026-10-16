@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/providers.dart';
+import '../../../core/services/license_service.dart';
 import '../../../core/scanner/scanner_providers.dart';
 import '../../../shared/widgets/app_ui.dart';
 import '../../../shared/widgets/common.dart';
@@ -35,6 +36,10 @@ class _SS extends ConsumerState<SettingsScreen> {
   bool busyPdf = false;
   bool busyExcel = false;
   String exportStep = '';
+  String licCode = '';
+  String licSerial = '';
+  String licExp = '';
+  bool checkingLic = false;
 
   @override
   void initState() {
@@ -55,7 +60,47 @@ class _SS extends ConsumerState<SettingsScreen> {
     debounce = int.tryParse(
             m[AppConstants.kScannerDebounce] ?? '400') ??
         400;
+    licCode = m[AppConstants.kLicCode] ?? '';
+    licSerial = m[AppConstants.kLicSerial] ?? '';
+    licExp = m[AppConstants.kLicExpires] ?? '';
     if (mounted) setState(() => loaded = true);
+  }
+
+  /// فحص الترخيص الآن وعرض النتيجة (للتشخيص).
+  Future<void> _checkLic() async {
+    setState(() => checkingLic = true);
+    try {
+      final st =
+          await ref.read(licenseServiceProvider).evaluate();
+      if (!mounted) return;
+      switch (st) {
+        case LicenseState.ok:
+          toast(context, 'الترخيص ساري ✓');
+          break;
+        case LicenseState.expired:
+          showError(context, 'الترخيص منتهي — المفروض يقفل');
+          break;
+        case LicenseState.disabled:
+          showError(context, 'الترخيص موقوف — المفروض يقفل');
+          break;
+        case LicenseState.noLicense:
+          showError(context, 'لا يوجد ترخيص محفوظ');
+          break;
+      }
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) {
+        final s = ref.read(settingsServiceProvider);
+        final m = await s.all();
+        setState(() {
+          checkingLic = false;
+          licCode = m[AppConstants.kLicCode] ?? '';
+          licSerial = m[AppConstants.kLicSerial] ?? '';
+          licExp = m[AppConstants.kLicExpires] ?? '';
+        });
+      }
+    }
   }
 
   Future<void> _save() async {
@@ -540,6 +585,56 @@ class _SS extends ConsumerState<SettingsScreen> {
                 ]),
           ),
         ),
+        const SizedBox(height: 12),
+        const AppSectionTitle(title: 'حالة الترخيص (تشخيص)'),
+        Card(
+            child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                    crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                    children: [
+                      Text('الكود: ${licCode.isEmpty ? '—' : licCode}',
+                          textDirection: TextDirection.ltr,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700)),
+                      Text('السيريال: ${licSerial.isEmpty ? '—' : licSerial}',
+                          textDirection: TextDirection.ltr,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700)),
+                      Text(
+                          'ينتهي: ${licExp.isEmpty ? 'مدى الحياة' : licExp}',
+                          textDirection: TextDirection.ltr,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700)),
+                      Text(
+                          'ساعة الجهاز الآن: ${DateTime.now().toString().substring(0, 19)}',
+                          textDirection: TextDirection.ltr,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                            icon: checkingLic
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child:
+                                        CircularProgressIndicator(
+                                            strokeWidth: 2))
+                                : const Icon(
+                                    Icons.verified_outlined,
+                                    size: 20),
+                            label: const Text('فحص الترخيص الآن'),
+                            onPressed:
+                                checkingLic ? null : _checkLic),
+                      ),
+                    ]))),
         const SizedBox(height: 12),
         const Card(
             child: Padding(

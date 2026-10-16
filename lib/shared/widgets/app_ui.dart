@@ -674,20 +674,20 @@ class AppStatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(8),
       onTap: onTap,
       child: Row(
         children: [
           Container(
-            width: 46,
-            height: 46,
+            width: 28,
+            height: 28,
             decoration: BoxDecoration(
-              color: (bg ?? color).withValues(alpha: .14),
-              borderRadius: BorderRadius.circular(14),
+              color: (bg ?? color).withValues(alpha: .16),
+              borderRadius: BorderRadius.circular(9),
             ),
-            child: Icon(icon, size: 24, color: color),
+            child: Icon(icon, size: 16, color: color),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 6),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -698,17 +698,16 @@ class AppStatCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                         fontFamily: AppTextStyles.family,
-                        fontSize: 13,
+                        fontSize: 10,
                         fontWeight: FontWeight.w600,
                         color: AppColors.textSecondary)),
-                const SizedBox(height: 2),
                 Text(value,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textDirection: TextDirection.ltr,
                     style: const TextStyle(
                         fontFamily: AppTextStyles.family,
-                        fontSize: 20,
+                        fontSize: 15,
                         fontWeight: FontWeight.w800,
                         color: AppColors.textPrimary)),
               ],

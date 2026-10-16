@@ -274,7 +274,7 @@ class _PartiesState extends ConsumerState<PartiesScreen> {
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius:
-                                BorderRadius.circular(16),
+                                BorderRadius.circular(20),
                             boxShadow: [
                               BoxShadow(
                                   color: Colors.black.withValues(

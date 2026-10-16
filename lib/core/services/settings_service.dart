@@ -20,6 +20,11 @@ class SettingsService {
         conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
+  Future<void> delete(String key) async {
+    final d = await _db();
+    await d.delete('app_settings', where: 'key=?', whereArgs: [key]);
+  }
+
   Future<bool> allowNegativeStock() async =>
       (await get(AppConstants.kAllowNegativeStock)) == '1';
 

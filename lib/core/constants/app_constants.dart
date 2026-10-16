@@ -48,6 +48,12 @@ class AppConstants {
   static const String kPcUser = 'pc_user';
   static const String kPcPass = 'pc_pass';
   static const String kPcFolder = 'pc_folder';
+  // ترخيص النظام (Supabase)
+  static const String kLicCode = 'lic_code';
+  static const String kLicExpires = 'lic_expires_at';
+  static const String kLicStatus = 'lic_status';
+  static const String kLicSerial = 'device_serial';
+  static const String kLicLastSeen = 'lic_last_seen';
   // الأرشفة الأسبوعية التلقائية للكمبيوتر
   static const String kLastAutoArchive = 'last_auto_archive';
   static const int autoArchiveEveryDays = 7;

@@ -29,71 +29,69 @@ class _RefSettingsState extends ConsumerState<RefSettingsScreen> {
   Widget build(BuildContext context) {
     return RefScaffold(
       title: 'الاعدادات',
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+      body: RefFitList(
+        gap: 12,
+        maxItemHeight: 96,
+        footer: busy
+            ? Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: RefColors.cardBorder),
+                ),
+                child: Row(children: [
+                  const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 3)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                      child: Text(step,
+                          style: const TextStyle(
+                              fontFamily: 'Cairo',
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: RefColors.navy))),
+                ]),
+              )
+            : null,
         children: [
-          _card(context, 'ادارة المستخدمين', Icons.groups_rounded, const UsersScreen()),
-          _card(context, 'تصريحات المستخدم', Icons.edit_document, const PermissionsScreen()),
-          _card(context, 'الإرسال للكمبيوتر', Icons.lan_outlined, const PcExportScreen()),
+          _card(context, 'ادارة المستخدمين', Icons.groups_rounded,
+              const UsersScreen(),
+              colors: const [Color(0xFF1D6FE0), Color(0xFF5DB0FF)]),
+          _card(context, 'تصريحات المستخدم', Icons.edit_document,
+              const PermissionsScreen(),
+              colors: const [Color(0xFF7C3AED), Color(0xFFB794F6)]),
+          _card(context, 'الإرسال للكمبيوتر', Icons.lan_outlined,
+              const PcExportScreen(),
+              colors: const [Color(0xFF0E8C97), Color(0xFF38D1C4)]),
           _card(context, 'تصدير قاعدة البيانات', Icons.save_alt_rounded, null,
-              onTap: busy ? null : _exportChoice),
-          _card(context, 'استيراد قاعدة البيانات', Icons.add_rounded, null,
+              onTap: busy ? null : _exportChoice,
+              colors: const [Color(0xFF0FA968), Color(0xFF45D69B)]),
+          _card(context, 'استيراد قاعدة البيانات', Icons.upload_file_rounded, null,
               onTap: () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                      builder: (_) => const ImportHubScreen()))),
-          if (busy) ...[
-            const SizedBox(height: 4),
-            Row(children: [
-              const SizedBox(
-                  width: 22,
-                  height: 22,
-                  child: CircularProgressIndicator(strokeWidth: 3)),
-              const SizedBox(width: 10),
-              Expanded(
-                  child: Text(step,
-                      style: const TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700))),
-            ]),
-          ],
+                      builder: (_) => const ImportHubScreen())),
+              colors: const [Color(0xFFF76B1C), Color(0xFFFFA94D)]),
         ],
       ),
     );
   }
 
-  Widget _card(BuildContext context, String title, IconData icon, Widget? page, {VoidCallback? onTap}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: InkWell(
-        onTap: onTap ??
-            (page == null
-                ? null
-                : () => Navigator.push(context, MaterialPageRoute(builder: (_) => page))),
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 26),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(color: Colors.black.withValues(alpha: .08), blurRadius: 10, offset: const Offset(0, 3)),
-            ],
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(title,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        fontFamily: 'Cairo', fontSize: 21, fontWeight: FontWeight.w800, color: RefColors.navy)),
-              ),
-              Icon(icon, size: 46, color: RefColors.primary),
-            ],
-          ),
-        ),
-      ),
+  Widget _card(BuildContext context, String title, IconData icon, Widget? page,
+      {VoidCallback? onTap, required List<Color> colors}) {
+    return RefMenuCard(
+      title: title,
+      icon: icon,
+      colors: colors,
+      onTap: onTap ??
+          (page == null
+              ? null
+              : () => Navigator.push(
+                  context, MaterialPageRoute(builder: (_) => page))),
     );
   }
 
