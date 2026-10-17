@@ -10,6 +10,7 @@ import '../../core/services/barcode_parser.dart';
 import '../../core/theme/ref_style.dart';
 import '../../core/utils/app_utils.dart';
 import '../../shared/models/entities.dart';
+import '../../shared/widgets/barcode_ruler.dart';
 import 'add_code_dialog.dart';
 
 /// اضافة صنف — الرمز/الاسم/نوع الوزن/الباركود + مربعات الكود والوزن والتاريخ.
@@ -451,6 +452,8 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
     var unit = cfgUnit;
     var s = _clampSeg(wStart, _barcode.length);
     var e = _clampSeg(wEnd, _barcode.length);
+    // الخانة النشطة للمرّر التلقائي للمسطرة (الأخيرة المضبوطة).
+    var focusPos = e > 0 ? e : (s > 0 ? s : 0);
     // كنترولر ثابت لحقل القيمة — يُحدَّث نصه يدويًا بدل إنشائه في كل build
     // (إنشاؤه داخل build يسبب استخدام كنترولر بعد dispose).
     final valueC = TextEditingController();
@@ -493,18 +496,28 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
                         fontSize: 14,
                         fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
-                _ruler(_barcode, s, e),
+                BarcodeRuler(
+                    barcode: _barcode,
+                    start: s,
+                    end: e,
+                    focusPos: focusPos),
                 const SizedBox(height: 10),
                 Row(
                   children: [
                     Expanded(
                         child: _posStepper(
                             'البداية', s, _barcode.length,
-                            (v) => setS(() => s = v))),
+                            (v) => setS(() {
+                                  s = v;
+                                  focusPos = v;
+                                }))),
                     const SizedBox(width: 12),
                     Expanded(
                         child: _posStepper('النهاية', e,
-                            _barcode.length, (v) => setS(() => e = v))),
+                            _barcode.length, (v) => setS(() {
+                                  e = v;
+                                  focusPos = v;
+                                }))),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -571,6 +584,8 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
     var en = hasCode;
     var s = _clampSeg(cStart, _barcode.length);
     var e = _clampSeg(cEnd, _barcode.length);
+    // الخانة النشطة للمرّر التلقائي للمسطرة (الأخيرة المضبوطة).
+    var focusPos = e > 0 ? e : (s > 0 ? s : 0);
     await refDialog(
       context: context,
       dialogTitle: 'خيارات الكود',
@@ -600,18 +615,28 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
                         fontSize: 14,
                         fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
-                _ruler(_barcode, s, e),
+                BarcodeRuler(
+                    barcode: _barcode,
+                    start: s,
+                    end: e,
+                    focusPos: focusPos),
                 const SizedBox(height: 10),
                 Row(
                   children: [
                     Expanded(
                         child: _posStepper(
                             'البداية', s, _barcode.length,
-                            (v) => setS(() => s = v))),
+                            (v) => setS(() {
+                                  s = v;
+                                  focusPos = v;
+                                }))),
                     const SizedBox(width: 12),
                     Expanded(
                         child: _posStepper('النهاية', e,
-                            _barcode.length, (v) => setS(() => e = v))),
+                            _barcode.length, (v) => setS(() {
+                                  e = v;
+                                  focusPos = v;
+                                }))),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -635,6 +660,8 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
     var fmt = cfgDateFmt;
     var s = _clampSeg(dStart, _barcode.length);
     var e = _clampSeg(dEnd, _barcode.length);
+    // الخانة النشطة للمرّر التلقائي للمسطرة (الأخيرة المضبوطة).
+    var focusPos = e > 0 ? e : (s > 0 ? s : 0);
     await refDialog(
       context: context,
       dialogTitle: 'خيارات التاريخ',
@@ -669,18 +696,28 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
                         fontSize: 14,
                         fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
-                _ruler(_barcode, s, e),
+                BarcodeRuler(
+                    barcode: _barcode,
+                    start: s,
+                    end: e,
+                    focusPos: focusPos),
                 const SizedBox(height: 10),
                 Row(
                   children: [
                     Expanded(
                         child: _posStepper(
                             'البداية', s, _barcode.length,
-                            (v) => setS(() => s = v))),
+                            (v) => setS(() {
+                                  s = v;
+                                  focusPos = v;
+                                }))),
                     const SizedBox(width: 12),
                     Expanded(
                         child: _posStepper('النهاية', e,
-                            _barcode.length, (v) => setS(() => e = v))),
+                            _barcode.length, (v) => setS(() {
+                                  e = v;
+                                  focusPos = v;
+                                }))),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -1084,74 +1121,6 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
     );
   }
 
-  Widget _ruler(String barcode, int s, int e) {
-    // كل حد يظهر بمجرد ضبطه: لو حُدّدت البداية فقط تُظلَّل خانتها فورًا،
-    // وكذلك النهاية — وبمجرد ضبط الاثنين يُظلَّل المقطع كامل بينهما
-    // مع إبراز خانتي الطرفين ليعرف المستخدم مكانه بالضبط.
-    final hasS = s > 0;
-    final hasE = e > 0;
-    final unset = !hasS && !hasE;
-    var a = hasS ? s : e;
-    var b = hasE ? e : s;
-    if (a > b) {
-      final t = a;
-      a = b;
-      b = t;
-    }
-    return Directionality(
-      textDirection: TextDirection.ltr,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            for (var i = 0; i < barcode.length; i++)
-              _rulerCell(
-                barcode[i],
-                i + 1,
-                inRange: !unset && i + 1 >= a && i + 1 <= b,
-                boundary: !unset && (i + 1 == a || i + 1 == b),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// خانة رقم واحدة في المسطرة — تُبرز الخانة الطرفية التي يقف عليها المستخدم.
-  Widget _rulerCell(String ch, int pos,
-      {required bool inRange, required bool boundary}) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 1.5),
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
-      decoration: BoxDecoration(
-        color: inRange
-            ? RefColors.primary.withValues(alpha: boundary ? .42 : .18)
-            : Colors.white,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: inRange ? RefColors.primary : RefColors.fieldBorder,
-          width: boundary ? 2.4 : 1,
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(ch,
-              style: const TextStyle(
-                  fontFamily: 'Cairo',
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800)),
-          Text('$pos',
-              style: TextStyle(
-                  fontFamily: 'Cairo',
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: inRange ? RefColors.primary : RefColors.hintGrey)),
-        ],
-      ),
-    );
-  }
 }
 
 /// حراسة حقل نصي من مسحات الماسح الضالة (وضع wedge يكتب في الحقل المركّز):

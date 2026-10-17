@@ -10,6 +10,7 @@ import '../../core/services/barcode_parser.dart';
 import '../../core/theme/ref_style.dart';
 import '../../core/utils/app_utils.dart';
 import '../../shared/models/entities.dart';
+import '../../shared/widgets/barcode_ruler.dart';
 
 const List<String> refMarks = ['1', '10', '100', '1000', '10000'];
 const List<String> refUnits = ['KG', 'LB'];
@@ -52,6 +53,8 @@ Future<void> showAddCodeDialog(
   // مقطع التاريخ داخل الباركود (0 = غير محدد = يُتجاهل عند المطابقة).
   int dStart = 0;
   int dEnd = 0;
+  // الخانة النشطة للمرّر التلقائي للمسطرة (البداية/النهاية الأخيرة المضبوطة).
+  int focusPos = 0;
 
   int clampCodePos(int v, int len) {
     if (v < 0) return 0;
@@ -90,6 +93,7 @@ Future<void> showAddCodeDialog(
         cEnd = clampCodePos(cEnd, len);
         dStart = clampCodePos(dStart, len);
         dEnd = clampCodePos(dEnd, len);
+        focusPos = wEnd;
       }
       refreshValue();
       try {
@@ -326,18 +330,26 @@ Future<void> showAddCodeDialog(
                         fontWeight: FontWeight.w600,
                         color: RefColors.hintGrey)),
                 const SizedBox(height: 4),
-                _barcodeRuler(barcode, wStart, wEnd),
+                BarcodeRuler(
+                    barcode: barcode,
+                    start: wStart,
+                    end: wEnd,
+                    focusPos: focusPos),
               ],
               const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
-                      child: stepper('البداية', wStart,
-                          (v) => wStart = v)),
+                      child: stepper('البداية', wStart, (v) {
+                    wStart = v;
+                    focusPos = v;
+                  })),
                   const SizedBox(width: 12),
                   Expanded(
-                      child:
-                          stepper('النهاية', wEnd, (v) => wEnd = v)),
+                      child: stepper('النهاية', wEnd, (v) {
+                    wEnd = v;
+                    focusPos = v;
+                  })),
                 ],
               ),
               const SizedBox(height: 8),
@@ -565,59 +577,3 @@ Widget _arrowBtn(
   );
 }
 
-/// مسطرة الباركود: كل رقم تحته ترقيمه، والمحدد بين البداية/النهاية مظلل.
-Widget _barcodeRuler(String barcode, int wStart, int wEnd) {
-  var s = wStart;
-  var e = wEnd;
-  if (s > e) {
-    final t = s;
-    s = e;
-    e = t;
-  }
-  return Directionality(
-    textDirection: TextDirection.ltr,
-    child: SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          for (var i = 0; i < barcode.length; i++)
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 1.5),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
-              decoration: BoxDecoration(
-                color: (i + 1 >= s && i + 1 <= e)
-                    ? RefColors.primary.withValues(alpha: .2)
-                    : Colors.white,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(
-                  color: (i + 1 >= s && i + 1 <= e)
-                      ? RefColors.primary
-                      : RefColors.fieldBorder,
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(barcode[i],
-                      style: const TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800)),
-                  Text('${i + 1}',
-                      style: TextStyle(
-                          fontFamily: 'Cairo',
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: (i + 1 >= s && i + 1 <= e)
-                              ? RefColors.primary
-                              : RefColors.hintGrey)),
-                ],
-              ),
-            ),
-        ],
-      ),
-    ),
-  );
-}
