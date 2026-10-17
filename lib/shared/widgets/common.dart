@@ -593,6 +593,9 @@ class LinesCellTable extends StatelessWidget {
   final bool editable;
   /// معامل تكبير خط الجدول (الصنف/الكمية/الوزن/السعر) — 1.0 = الافتراضي.
   final double fontScale;
+  /// عرض "تفاصيل كاملة": خط أكبر + اسم/كود/أرقام تلفّ على أسطر بدل القصّ
+  /// (يُستخدم في شاشات تفاصيل الأذون للقراءة الواضحة).
+  final bool big;
   const LinesCellTable({
     super.key,
     required this.rows,
@@ -605,15 +608,299 @@ class LinesCellTable extends StatelessWidget {
     this.showPrice = true,
     this.editable = true,
     this.fontScale = 1.0,
+    this.big = false,
   });
+
+  /// المقاس الفعلي = [fontScale] × تكبير الوضع الكبير.
+  double get _scale => fontScale * (big ? 1.35 : 1.0);
 
   String _f(double v) =>
       v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
-  String _f2(double v) => v.toStringAsFixed(2);
+  String _f2(double v) => v.toStringAsFixed(3);
+
+  double _mx(double a, double b) => a > b ? a : b;
+
+  /// قياس عرض نص سطر واحد — لحساب عرض الأعمدة في الوضع الكبير.
+  double _tw(String text, TextStyle style) {
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      maxLines: 1,
+    )..layout();
+    return tp.width;
+  }
 
   @override
   Widget build(BuildContext context) {
     if (rows.isEmpty) return const SizedBox.shrink();
+
+    final headStyle = TextStyle(
+        fontFamily: AppTextStyles.family,
+        fontSize: 14 * _scale,
+        fontWeight: FontWeight.w800,
+        color: Colors.white);
+    final nameStyle = TextStyle(
+        fontFamily: AppTextStyles.family,
+        fontSize: 15 * _scale,
+        fontWeight: FontWeight.w800,
+        color: AppColors.textPrimary);
+    final codeStyle = TextStyle(
+        fontFamily: AppTextStyles.family,
+        fontSize: 13 * _scale,
+        fontWeight: FontWeight.w600,
+        color: AppColors.textSecondary);
+    final numStyle = TextStyle(
+        fontFamily: AppTextStyles.family,
+        fontSize: 15 * _scale,
+        fontWeight: FontWeight.w800,
+        color: AppColors.textPrimary);
+    final actionsW = ((onEdit != null) ? 36.0 : 0.0) +
+        ((onDelete != null) ? 36.0 : 0.0);
+
+    // نص عمود: لو طال أكثر من عرضه يصغر الخط قليلًا (بلا قصّ).
+    Widget fitted(String text, TextStyle style,
+            {AlignmentGeometry align = Alignment.center, bool ltr = false}) =>
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: align,
+          child: Text(text,
+              maxLines: 1,
+              softWrap: false,
+              textDirection: ltr ? TextDirection.ltr : null,
+              style: style),
+        );
+
+    Widget actionBtns(int i) => Row(children: [
+          if (onEdit != null)
+            SizedBox(
+              width: 36,
+              child: IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 36, minHeight: 36),
+                  icon: const Icon(Icons.edit_outlined,
+                      color: AppColors.primaryDark, size: 20),
+                  onPressed: () => onEdit!(i)),
+            ),
+          if (onDelete != null)
+            SizedBox(
+              width: 36,
+              child: IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 36, minHeight: 36),
+                  icon: const Icon(Icons.delete_outline_rounded,
+                      color: AppColors.danger, size: 20),
+                  onPressed: () => onDelete!(i)),
+            ),
+        ]);
+
+    // ── الوضع الكبير (تفاصيل الأذون): أعمدة بعرض ثابت يكفي أطول نص
+    //    (بلا قصّ)، مع تمرير أفقي لو المجموع أوسع من الشاشة، وتمديد
+    //    عمود الصنف لأي فراغ متبقٍ لو المجموع أضيق — فمفيش هدر مساحات.
+    if (big) {
+      var nameW = _tw('الصنف', headStyle);
+      var codeW = _tw('الكود', headStyle);
+      var numW = _mx(_tw('كمية', headStyle), _tw('وزن', headStyle));
+      if (showPrice) numW = _mx(numW, _tw('سعر', headStyle));
+      for (final r in rows) {
+        nameW = _mx(nameW, _tw(r.name, nameStyle));
+        codeW = _mx(codeW, _tw(r.code, codeStyle));
+        numW = _mx(numW, _tw(_f(r.qty), numStyle));
+        numW = _mx(numW, _tw(_f2(r.weight), numStyle));
+        numW = _mx(numW, _tw(_f(r.price), numStyle));
+      }
+      nameW += 16;
+      codeW += 18;
+      numW += 20;
+      final numCols = showPrice ? 3 : 2;
+      const rowPad = 12.0;
+      final fixedW = codeW + numW * numCols + actionsW;
+
+      return Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: LayoutBuilder(builder: (context, c) {
+          final fill = c.maxWidth - rowPad - fixedW;
+          final nW = _mx(nameW, fill);
+          Widget col(double w, Widget child) =>
+              SizedBox(width: w, child: child);
+          Widget hEl(String t) => Text(t,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: headStyle);
+
+          final header = Container(
+            color: AppColors.primaryDark,
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+            child: Row(children: [
+              col(nW, hEl('الصنف')),
+              col(codeW, hEl('الكود')),
+              col(numW, hEl('كمية')),
+              col(numW, hEl('وزن')),
+              if (showPrice) col(numW, hEl('سعر')),
+              if (actionsW > 0) col(actionsW, const SizedBox.shrink()),
+            ]),
+          );
+
+          final body = <Widget>[header];
+          for (var i = 0; i < rows.length; i++) {
+            final r = rows[i];
+            body.add(Container(
+              decoration: BoxDecoration(
+                color: i.isEven ? Colors.white : const Color(0xFFF6F8F6),
+                border: const Border(
+                    top: BorderSide(color: AppColors.border, width: .6)),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    col(
+                        nW,
+                        fitted(r.name, nameStyle,
+                            align: AlignmentDirectional.centerStart)),
+                    col(codeW, fitted(r.code, codeStyle, ltr: true)),
+                    col(
+                        numW,
+                        _NumCell(
+                          key: ValueKey('q-$i-${r.qty}'),
+                          initial: _f(r.qty),
+                          editable: editable && onQtyChanged != null,
+                          onSubmit: (v) => onQtyChanged?.call(i, v),
+                          onScanRedirect: onScanRedirect,
+                          fontScale: _scale,
+                        )),
+                    col(
+                        numW,
+                        _NumCell(
+                          key: ValueKey('w-$i-${r.weight}'),
+                          initial: _f2(r.weight),
+                          editable: editable && onWeightChanged != null,
+                          onSubmit: (v) => onWeightChanged?.call(i, v),
+                          onScanRedirect: onScanRedirect,
+                          fontScale: _scale,
+                        )),
+                    if (showPrice)
+                      col(
+                          numW,
+                          _NumCell(
+                            key: ValueKey('p-$i-${r.price}'),
+                            initial: _f(r.price),
+                            editable: editable && onPriceChanged != null,
+                            onSubmit: (v) => onPriceChanged?.call(i, v),
+                            onScanRedirect: onScanRedirect,
+                            fontScale: _scale,
+                          )),
+                    if (actionsW > 0)
+                      SizedBox(width: actionsW, child: actionBtns(i)),
+                  ]),
+            ));
+          }
+
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: nW + fixedW + rowPad,
+              child: Column(mainAxisSize: MainAxisSize.min, children: body),
+            ),
+          );
+        }),
+      );
+    }
+
+    // ── الوضع العادي: أعمدة مرنة تملأ العرض.
+    Widget hcell(String t, int flex) => Expanded(
+        flex: flex,
+        child: Text(t,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: headStyle));
+
+    final header = Container(
+      color: AppColors.primaryDark,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+      child: Row(children: [
+        hcell('الصنف', 4),
+        hcell('كمية', 2),
+        hcell('وزن', 2),
+        if (showPrice) hcell('سعر', 2),
+        if (actionsW > 0)
+          SizedBox(width: actionsW, child: const SizedBox.shrink()),
+      ]),
+    );
+
+    final body = <Widget>[header];
+    for (var i = 0; i < rows.length; i++) {
+      final r = rows[i];
+      body.add(Container(
+        decoration: BoxDecoration(
+          color: i.isEven ? Colors.white : const Color(0xFFF6F8F6),
+          border:
+              const Border(top: BorderSide(color: AppColors.border, width: .6)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          Expanded(
+            flex: 4,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(r.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: nameStyle),
+                Text(r.code,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textDirection: TextDirection.ltr,
+                    style: codeStyle),
+              ],
+            ),
+          ),
+          Expanded(
+              flex: 2,
+              child: _NumCell(
+                key: ValueKey('q-$i-${r.qty}'),
+                initial: _f(r.qty),
+                editable: editable && onQtyChanged != null,
+                onSubmit: (v) => onQtyChanged?.call(i, v),
+                onScanRedirect: onScanRedirect,
+                fontScale: _scale,
+              )),
+          Expanded(
+              flex: 2,
+              child: _NumCell(
+                key: ValueKey('w-$i-${r.weight}'),
+                initial: _f2(r.weight),
+                editable: editable && onWeightChanged != null,
+                onSubmit: (v) => onWeightChanged?.call(i, v),
+                onScanRedirect: onScanRedirect,
+                fontScale: _scale,
+              )),
+          if (showPrice)
+            Expanded(
+                flex: 2,
+                child: _NumCell(
+                  key: ValueKey('p-$i-${r.price}'),
+                  initial: _f(r.price),
+                  editable: editable && onPriceChanged != null,
+                  onSubmit: (v) => onPriceChanged?.call(i, v),
+                  onScanRedirect: onScanRedirect,
+                  fontScale: _scale,
+                )),
+          actionBtns(i),
+        ]),
+      ));
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -621,154 +908,7 @@ class LinesCellTable extends StatelessWidget {
         border: Border.all(color: AppColors.border),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        // هيدر الخلايا
-        Container(
-          color: AppColors.primaryDark,
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-          child: Row(children: [
-            Expanded(
-                flex: 4,
-                child: Text('الصنف',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        fontFamily: AppTextStyles.family,
-                        fontSize: 14 * fontScale,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white))),
-            Expanded(
-                flex: 2,
-                child: Text('كمية',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        fontFamily: AppTextStyles.family,
-                        fontSize: 14 * fontScale,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white))),
-            Expanded(
-                flex: 2,
-                child: Text('وزن',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        fontFamily: AppTextStyles.family,
-                        fontSize: 14 * fontScale,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white))),
-            if (showPrice)
-              Expanded(
-                  flex: 2,
-                  child: Text('سعر',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                          fontFamily: AppTextStyles.family,
-                          fontSize: 14 * fontScale,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white))),
-            if (onDelete != null || onEdit != null)
-              SizedBox(
-                  width: (onDelete != null && onEdit != null) ? 72 : 36,
-                  child: const Text('',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.white))),
-          ]),
-        ),
-        ...rows.asMap().entries.map((e) {
-          final i = e.key;
-          final r = e.value;
-          return Container(
-            decoration: BoxDecoration(
-              color: i.isEven ? Colors.white : const Color(0xFFF6F8F6),
-              border: const Border(
-                  top: BorderSide(color: AppColors.border, width: .6)),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-              // خلية الصنف: اسم + كود
-              Expanded(
-                flex: 4,
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(r.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontFamily: AppTextStyles.family,
-                              fontSize: 15 * fontScale,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.textPrimary)),
-                      Text(r.code,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textDirection: TextDirection.ltr,
-                          style: TextStyle(
-                              fontFamily: AppTextStyles.family,
-                              fontSize: 13 * fontScale,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.textSecondary)),
-                    ]),
-              ),
-              // خلية الكمية
-              Expanded(
-                  flex: 2,
-                  child: _NumCell(
-                    key: ValueKey('q-$i-${r.qty}'),
-                    initial: _f(r.qty),
-                    editable: editable && onQtyChanged != null,
-                    onSubmit: (v) => onQtyChanged?.call(i, v),
-                    onScanRedirect: onScanRedirect,
-                    fontScale: fontScale,
-                  )),
-              // خلية الوزن
-              Expanded(
-                  flex: 2,
-                  child: _NumCell(
-                    key: ValueKey('w-$i-${r.weight}'),
-                    initial: _f2(r.weight),
-                    editable: editable && onWeightChanged != null,
-                    onSubmit: (v) => onWeightChanged?.call(i, v),
-                    onScanRedirect: onScanRedirect,
-                    fontScale: fontScale,
-                  )),
-              // خلية السعر
-              if (showPrice)
-                Expanded(
-                    flex: 2,
-                    child: _NumCell(
-                      key: ValueKey('p-$i-${r.price}'),
-                      initial: _f(r.price),
-                      editable: editable && onPriceChanged != null,
-                      onSubmit: (v) => onPriceChanged?.call(i, v),
-                      onScanRedirect: onScanRedirect,
-                      fontScale: fontScale,
-                    )),
-              if (onEdit != null)
-                SizedBox(
-                  width: 36,
-                  child: IconButton(
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                          minWidth: 36, minHeight: 36),
-                      icon: const Icon(Icons.edit_outlined,
-                          color: AppColors.primaryDark, size: 20),
-                      onPressed: () => onEdit!(i)),
-                ),
-              if (onDelete != null)
-                SizedBox(
-                  width: 36,
-                  child: IconButton(
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(
-                          minWidth: 36, minHeight: 36),
-                      icon: const Icon(Icons.delete_outline_rounded,
-                          color: AppColors.danger, size: 20),
-                      onPressed: () => onDelete!(i)),
-                ),
-            ]),
-          );
-        }),
-      ]),
+      child: Column(mainAxisSize: MainAxisSize.min, children: body),
     );
   }
 }
@@ -881,16 +1021,18 @@ class _NumCellState extends State<_NumCell> {
           color: const Color(0xFFF1F4F1),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Text(widget.initial,
-            textAlign: TextAlign.center,
-            textDirection: TextDirection.ltr,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-                fontFamily: AppTextStyles.family,
-                fontSize: 15 * widget.fontScale,
-                fontWeight: FontWeight.w800,
-                color: AppColors.textPrimary)),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(widget.initial,
+              textAlign: TextAlign.center,
+              textDirection: TextDirection.ltr,
+              maxLines: 1,
+              style: TextStyle(
+                  fontFamily: AppTextStyles.family,
+                  fontSize: 15 * widget.fontScale,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.textPrimary)),
+        ),
       );
     }
     return Container(
@@ -1005,7 +1147,7 @@ class _ScansBreakdownDialogState extends State<ScansBreakdownDialog> {
 
   String _f(double v) =>
       v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
-  String _f2(double v) => v.toStringAsFixed(2);
+  String _f2(double v) => v.toStringAsFixed(3);
 
   void _onDeleteScan(DocLine s) {
     widget.onDelete(s); // الأب يحذف من قائمته

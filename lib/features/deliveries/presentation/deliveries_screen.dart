@@ -218,7 +218,8 @@ class _CD extends ConsumerState<CreateDeliveryScreen> {
           return;
         }
         var w =
-            BarcodeParser.calcValue(code, t.wStart, t.wEnd, t.mark);
+            BarcodeParser.calcValue(code, t.wStart, t.wEnd, t.mark,
+                unit: t.unit);
         if (!p.hasWeight) w = 0;
         _pushLine(p.code, p.desc, weight: w, price: p.price);
         return;
@@ -431,6 +432,7 @@ class _CD extends ConsumerState<CreateDeliveryScreen> {
               // وزر التعديل يفتح تفصيلة المسحات للحذف. أي مسحة تضل لخلية
               // رقمية تُعالج كمسحة بدل حفظها كرقم.
               editable: false,
+              big: true,
               onScanRedirect: _handleCellScan,
               onEdit: (i) => _editGrouped(gs[i]),
               onDelete: (i) =>
@@ -657,6 +659,7 @@ class DeliveryDetailsScreen extends ConsumerWidget {
                         price: g.price),
                 ],
                 editable: false,
+                big: true,
               );
             }),
             Wrap(spacing: 8, children: [

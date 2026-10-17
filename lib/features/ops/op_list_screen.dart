@@ -323,7 +323,7 @@ class _OpListState extends ConsumerState<OpListScreen> {
 
   Widget _card(_OpCard c) {
     String f(double v) => v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
-    String f2(double v) => v.toStringAsFixed(2);
+    String f2(double v) => v.toStringAsFixed(3);
     return InkWell(
       onTap: () async {
         await Navigator.push(

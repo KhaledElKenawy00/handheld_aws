@@ -1,51 +1,86 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
-import 'package:flutter/services.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:sunmi_scanner/sunmi_scanner.dart' as sunmi;
 
 import 'scanner_service.dart';
 
-/// تكامل ماسح الجهاز المدمج — بدون أي حزمة خارجية (يعمل مع Dart 3.11).
-/// يدعم SUNMI L2s Pro وأجهزة Honeywell (عبر Data Intent Claim).
+/// سائق الماسح المستخدم على الجهاز الحالي — واحد فقط يعمل في الوقت نفسه،
+/// حتى لا يتزاحم سائقان على نفس رأس المسح.
+enum ScannerBackend { sunmi, honeywell, none }
+
+/// خدمة المسح الموحّدة.
 ///
-/// القنوات الأصلية (انظر MainActivity.kt):
-///  - EventChannel `com.sanad.scanner/stream`: يستقبل كل مسح من
-///    Broadcast الرسمي `com.sunmi.scanner.ACTION_DATA_CODE_RECEIVED`
-///    (extra `data` — ووضع Broadcast Output) + fallbacks لأجهزة L2s Pro
-///    (`ACTION_DECODE_DATA` / `ACTION_SCAN_RESULT` + مفاتيح barcode/code/...
-///    + بايتات source_byte/data_byte) + بث Honeywell
-///    (`com.sanad.scanner.HONEYWELL_DATA` بعد Claim تلقائي).
-///  - MethodChannel `com.sanad.scanner/control`: أوامر `trigger` / `stop`
-///    تُترجم في MainActivity إلى بثّات SUNMI الرسمية لتشغيل الماسح برمجيًا.
-///  - Keyboard-wedge: زر المسح الفيزيائي يصب في أي TextField مركّز
-///    تلقائيًا بدون أي كود (وضع KeyEvent الافتراضي) — لذلك كل حقول
-///    الباركود/الرمز فيها autofocus + زر مسح برمجي كبديل.
-/// ملاحظة جهاز L2s Pro: فعّل من إعدادات الماسح وضع Broadcast Output
-/// أو KeyEvent حسب الاستخدام — التطبيق يدعم الاثنين معًا.
+/// - أجهزة SUNMI (L2s Pro ...): نستخدم حزمة `sunmi_scanner` — تربط خدمة
+///   الماسح عبر AIDL (`scan`/`stop`) وتستقبل الكود من بثّ
+///   `com.sunmi.scanner.ACTION_DATA_CODE_RECEIVED` (مفتاح `data`) فقط.
+/// - أجهزة Honeywell: نستخدم الجسر الأصلي (Data Collection SDK) عبر القناة
+///   `com.sanad.scanner/stream`.
+///
+/// سبب الفصل: بعض أجهزة SUNMI L2s Pro بيبقى فيها رأس Honeywell، وكان سائق
+/// Honeywell الأصلي يخطف الماسح من خدمة SUNMI في نفس الوقت → قراءة ناقصة/
+/// مشوّشة. دلوقتي نختار سائقًا واحدًا حسب مُصنّع الجهاز.
 class SunmiScannerService implements ScannerService {
   final _controller = StreamController<String>.broadcast();
   StreamSubscription? _nativeSub;
+  StreamSubscription? _sunmiSub;
   static const _streamCh = EventChannel('com.sanad.scanner/stream');
   static const _controlCh = MethodChannel('com.sanad.scanner/control');
+
+  ScannerBackend _backend = ScannerBackend.none;
+  ScannerBackend get backend => _backend;
 
   String _lastCode = '';
   DateTime _lastAt = DateTime.fromMillisecondsSinceEpoch(0);
   int _debounceMs = 400;
   bool _ready = false;
   bool _paused = false;
+  bool _blockWedge = true;
   DateTime _lastPausedBuzzAt = DateTime.fromMillisecondsSinceEpoch(0);
 
-  void configure(ScannerConfig c) => _debounceMs = c.debounceMs;
+  void configure(ScannerConfig c) {
+    _debounceMs = c.debounceMs;
+    _blockWedge = c.blockWedge;
+    _applyWedgeSuppression();
+  }
 
-  /// إيقاف/استئناف استقبال المسح. عند الإيقاف نعطّل زر الماسح الفيزيائي
-  /// في الفرموير نفسه (SUNMI ACTION_TRIGGER_CONTROL) — بدون كده الزر
-  /// يفضل شغال ويصدر صوت/قراءة أثناء الرسالة المفتوحة.
+  /// على SUNMI: نمنع إخراج الماسح كـ keyboard-wedge حتى لا يتزاحم مع البثّ
+  /// ويشوّه الحقل. لا تأثير على أجهزة Honeywell أو الكيبورد على الشاشة.
+  void _applyWedgeSuppression() {
+    if (_backend != ScannerBackend.sunmi) return;
+    try {
+      _controlCh.invokeMethod('setSuppressWedge', {'value': _blockWedge});
+    } catch (_) {}
+  }
+
+  /// تحديد السائق حسب مُصنّع الجهاز.
+  Future<ScannerBackend> _detect() async {
+    if (!Platform.isAndroid) return ScannerBackend.none;
+    try {
+      final a = await DeviceInfoPlugin().androidInfo;
+      final id = '${a.manufacturer} ${a.brand} ${a.model}'.toLowerCase();
+      if (id.contains('sunmi')) return ScannerBackend.sunmi;
+      return ScannerBackend.honeywell;
+    } catch (_) {
+      return ScannerBackend.honeywell;
+    }
+  }
+
+  /// إيقاف/استئناف استقبال المسح. عند الإيقاف نمنع زر الماسح الفيزيائي
+  /// في الفرموير (SUNMI ACTION_TRIGGER_CONTROL) ونوقف مسح AIDL.
   @override
   void setPaused(bool paused) {
     _paused = paused;
+    if (paused && _backend == ScannerBackend.sunmi) {
+      try {
+        sunmi.SunmiScanner.stop();
+      } catch (_) {}
+    }
     _controlCh.invokeMethod(paused ? 'pause' : 'resume').catchError((Object e) {
       debugPrint('setPaused native failed: $e');
-      // لو القناة مش موجودة، منوقفش المحاولة: على الأقل نوقف القراءة.
       if (paused) {
         try {
           stopScan();
@@ -72,7 +107,6 @@ class SunmiScannerService implements ScannerService {
     // مسحة وصلت أثناء رسالة/حوار مفتوح: نتجاهلها، نوقف الماسح والصوت،
     // ونستبدل صوت الماسح باهتزاز من الجهاز عشان اليوزر يحس إن فيه رسالة.
     if (_paused) {
-      // وصلت مسحة رغم الإيقاف (الترّيجر كان لسه مفعّل) — نعيد تعطيله فورًا.
       try {
         _controlCh.invokeMethod('pause');
       } catch (_) {}
@@ -95,9 +129,10 @@ class SunmiScannerService implements ScannerService {
   @override
   Future<void> initialize() async {
     if (_ready) return;
+    _backend = await _detect();
+
+    // قناة الجسر الأصلي: مسحات Honeywell (+ بديل Data Collection Intent).
     try {
-      // بعض أجهزة L2s Pro ترسل الباركود مع \n في النهاية (wedge) —
-      // _emit بيعمل trim تلقائيًا.
       _nativeSub = _streamCh.receiveBroadcastStream().listen(
         (dynamic e) {
           if (e == null) return;
@@ -111,18 +146,63 @@ class SunmiScannerService implements ScannerService {
             _emit(e.toString());
           }
         },
-        onError: (Object e) => debugPrint('sunmi broadcast err: $e'),
+        onError: (Object e) => debugPrint('native scanner err: $e'),
       );
     } catch (e) {
       debugPrint('native scanner channel unavailable: $e');
     }
+
+    switch (_backend) {
+      case ScannerBackend.sunmi:
+        await _initSunmi();
+        break;
+      case ScannerBackend.honeywell:
+        // نربط سائق Honeywell عند الطلب فقط — لا نتصل تلقائيًا، حتى لا
+        // يتزاحم مع خدمة SUNMI على أجهزة L2s Pro.
+        try {
+          await _controlCh.invokeMethod('initHoneywell');
+        } catch (e) {
+          debugPrint('initHoneywell failed: $e');
+        }
+        break;
+      case ScannerBackend.none:
+        break;
+    }
     _ready = true;
+  }
+
+  Future<void> _initSunmi() async {
+    try {
+      await sunmi.SunmiScanner.bindService(showToast: false);
+      _sunmiSub = sunmi.SunmiScanner.onBarcodeScanned().listen(
+        (String code) => _emit(code),
+        onError: (Object e) => debugPrint('sunmi scanner err: $e'),
+      );
+      _applyWedgeSuppression();
+    } catch (e) {
+      debugPrint('sunmi scanner init failed: $e');
+    }
   }
 
   @override
   Future<void> triggerScan() async {
     // فيه رسالة/حوار مفتوح — لا تبدأ مسحًا جديدًا (تفادي الصوت والزحمة).
     if (_paused) return;
+    if (_backend == ScannerBackend.sunmi) {
+      // `scan()`/`stop()` من الحزمة `void async` — لا يمكن await لها،
+      // فنتأكد أولًا أن الخدمة جاهزة ثم نطلقها.
+      var available = false;
+      try {
+        available = await sunmi.SunmiScanner.isScannerAvailable();
+      } catch (_) {}
+      if (available) {
+        sunmi.SunmiScanner.scan();
+        return;
+      }
+      throw PlatformException(
+          code: 'SCAN_FAILED',
+          message: 'تعذّر تشغيل الماسح — استخدم زر الجهاز الفيزيائي');
+    }
     try {
       await _controlCh.invokeMethod('trigger');
     } on MissingPluginException {
@@ -135,6 +215,11 @@ class SunmiScannerService implements ScannerService {
 
   @override
   Future<void> stopScan() async {
+    if (_backend == ScannerBackend.sunmi) {
+      try {
+        sunmi.SunmiScanner.stop();
+      } catch (_) {}
+    }
     try {
       await _controlCh.invokeMethod('stop');
     } catch (e) {
@@ -151,6 +236,12 @@ class SunmiScannerService implements ScannerService {
       } catch (_) {}
       _paused = false;
     }
+    if (_backend == ScannerBackend.sunmi) {
+      try {
+        await sunmi.SunmiScanner.unbindService();
+      } catch (_) {}
+    }
+    await _sunmiSub?.cancel();
     await _nativeSub?.cancel();
     await _controller.close();
     _ready = false;

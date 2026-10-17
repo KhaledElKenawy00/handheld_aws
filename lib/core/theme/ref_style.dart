@@ -538,17 +538,30 @@ class RefDropdown<T> extends StatelessWidget {
 
 /// دايلوج مرجعي: دائرة gradient فوق الحافة + حفظ + إلغاء.
 /// [dialogTitle] عنوان اختياري يظهر أعلى المحتوى ليدل على الدايلوج.
+/// - [onCancel]: لو مُرِّر، يُستدعى قبل الإغلاق (زر الإلغاء أو الرجوع)؛
+///   إرجاع `false` يمنع الإغلاق (مثل تأكيد ترك بيانات غير محفوظة).
 Future<T?> refDialog<T>({
   required BuildContext context,
   required Widget content,
   required VoidCallback onSave,
   String saveLabel = 'حفظ',
   String? dialogTitle,
+  Future<bool> Function()? onCancel,
 }) {
   return showDialog<T>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => Stack(
+    builder: (_) => PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        if (onCancel != null) {
+          final ok = await onCancel();
+          if (!ok) return;
+        }
+        if (context.mounted) Navigator.pop(context);
+      },
+      child: Stack(
       clipBehavior: Clip.none,
       children: [
         AlertDialog(
@@ -591,7 +604,13 @@ Future<T?> refDialog<T>({
                   children: [
                     RefButton(label: saveLabel, onPressed: onSave),
                     TextButton(
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: () async {
+                        if (onCancel != null) {
+                          final ok = await onCancel();
+                          if (!ok) return;
+                        }
+                        if (context.mounted) Navigator.pop(context);
+                      },
                       child: const Text('الغاء',
                           style: TextStyle(
                               fontFamily: 'Cairo', fontSize: 17, fontWeight: FontWeight.w700, color: RefColors.primary)),
@@ -626,6 +645,7 @@ Future<T?> refDialog<T>({
           ),
         ),
       ],
+      ),
     ),
   );
 }

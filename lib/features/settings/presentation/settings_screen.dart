@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -10,6 +11,8 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/providers.dart';
 import '../../../core/services/license_service.dart';
 import '../../../core/scanner/scanner_providers.dart';
+import '../../../core/scanner/scanner_service.dart';
+import '../../../core/scanner/sunmi_scanner_service.dart';
 import '../../../shared/widgets/app_ui.dart';
 import '../../../shared/widgets/common.dart';
 import '../../../shared/widgets/pc_send.dart';
@@ -30,6 +33,7 @@ class _SS extends ConsumerState<SettingsScreen> {
   bool allowNeg = false;
   bool beep = true;
   bool vibrate = true;
+  bool blockKeyboard = true;
   int debounce = 400;
   bool loaded = false;
   bool busyBackup = false;
@@ -40,11 +44,44 @@ class _SS extends ConsumerState<SettingsScreen> {
   String licSerial = '';
   String licExp = '';
   bool checkingLic = false;
+  String lastScan = '';
+  StreamSubscription? _scanSub;
 
   @override
   void initState() {
     super.initState();
     _load();
+    // تشخيص: نعرض آخر كود وصل من الماسح + السائق المستخدم.
+    try {
+      _scanSub =
+          ref.read(scannerServiceProvider).scanStream.listen((code) {
+        if (mounted) setState(() => lastScan = code);
+      });
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _scanSub?.cancel();
+    super.dispose();
+  }
+
+  /// اسم السائق الحالي (SUNMI / Honeywell) لعرضه في التشخيص.
+  String _backendLabel() {
+    try {
+      final svc = ref.read(scannerServiceProvider);
+      if (svc is SunmiScannerService) {
+        switch (svc.backend) {
+          case ScannerBackend.sunmi:
+            return 'SUNMI (sunmi_scanner)';
+          case ScannerBackend.honeywell:
+            return 'Honeywell (SDK)';
+          case ScannerBackend.none:
+            return 'غير معروف';
+        }
+      }
+    } catch (_) {}
+    return '—';
   }
 
   Future<void> _load() async {
@@ -57,6 +94,7 @@ class _SS extends ConsumerState<SettingsScreen> {
     allowNeg = (m[AppConstants.kAllowNegativeStock] ?? '0') == '1';
     beep = (m[AppConstants.kScannerBeep] ?? '1') == '1';
     vibrate = (m[AppConstants.kScannerVibrate] ?? '1') == '1';
+    blockKeyboard = (m[AppConstants.kScannerBlockKeyboard] ?? '1') == '1';
     debounce = int.tryParse(
             m[AppConstants.kScannerDebounce] ?? '400') ??
         400;
@@ -115,6 +153,18 @@ class _SS extends ConsumerState<SettingsScreen> {
     await s.set(AppConstants.kScannerVibrate, vibrate ? '1' : '0');
     await s.set(
         AppConstants.kScannerDebounce, debounce.toString());
+    await s.set(
+        AppConstants.kScannerBlockKeyboard, blockKeyboard ? '1' : '0');
+    // طبّق الإعداد على الماسح فورًا (منع keyboard-wedge على SUNMI).
+    try {
+      final svc = ref.read(scannerServiceProvider);
+      if (svc is SunmiScannerService) {
+        svc.configure(ScannerConfig(
+          debounceMs: debounce.clamp(100, 2000),
+          blockWedge: blockKeyboard,
+        ));
+      }
+    } catch (_) {}
     ref.invalidate(settingsMapProvider);
     if (mounted) toast(context, 'تم حفظ الإعدادات');
   }
@@ -455,7 +505,7 @@ class _SS extends ConsumerState<SettingsScreen> {
             value: allowNeg,
             onChanged: (v) => setState(() => allowNeg = v)),
         const Divider(),
-        const AppSectionTitle(title: 'إعدادات الماسح (SUNMI L2s Pro)'),
+        const AppSectionTitle(title: 'إعدادات الماسح (SUNMI / Honeywell)'),
         SwitchListTile(
             title: const Text('صوت تنبيه عند المسح (Beep)'),
             value: beep,
@@ -482,6 +532,13 @@ class _SS extends ConsumerState<SettingsScreen> {
             ),
           ),
         ),
+        SwitchListTile(
+            title: const Text('منع إخراج الكيبورد من الماسح'),
+            subtitle: const Text(
+                'مفعّل افتراضيًا — يمنع تكرار/تشوّه الكود على أجهزة SUNMI '
+                '(يعتمد على البثّ فقط). اقفله لو حابب تكتب بكيبورد خارجي.'),
+            value: blockKeyboard,
+            onChanged: (v) => setState(() => blockKeyboard = v)),
         ListTile(
           leading: const Icon(Icons.document_scanner),
           title: const Text('اختبار الماسح'),
@@ -501,6 +558,35 @@ class _SS extends ConsumerState<SettingsScreen> {
                   if (context.mounted) showError(context, e);
                 }
               }),
+        ),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'السائق المستخدم: ${_backendLabel()}',
+                  style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 6),
+                const Text('آخر كود وصل من الماسح:',
+                    style: TextStyle(fontSize: 12)),
+                const SizedBox(height: 4),
+                SelectableText(
+                  lastScan.isEmpty ? '—' : lastScan,
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'عدد الأرقام: ${lastScan.length}',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
         ),
         const Divider(),
         const AppSectionTitle(title: 'الإرسال للكمبيوتر (شبكة محلية)'),
@@ -640,7 +726,7 @@ class _SS extends ConsumerState<SettingsScreen> {
             child: Padding(
                 padding: EdgeInsets.all(12),
                 child: Text(
-                    'SANAD v1.0.0 — سند\nيعمل Offline بالكامل بدون إنترنت.\nالماسح: SUNMI L2s Pro (SDK + Broadcast + زر فيزيائي).',
+                    'SANAD v1.0.0 — سند\nيعمل Offline بالكامل بدون إنترنت.\nالماسح: SUNMI (sunmi_scanner) أو Honeywell (SDK) حسب الجهاز.',
                     style: TextStyle(fontSize: 11, height: 1.6)))),
       ]),
     );

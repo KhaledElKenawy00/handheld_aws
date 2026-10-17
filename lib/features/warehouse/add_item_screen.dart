@@ -11,6 +11,7 @@ import '../../core/theme/ref_style.dart';
 import '../../core/utils/app_utils.dart';
 import '../../shared/models/entities.dart';
 import '../../shared/widgets/barcode_ruler.dart';
+import '../../shared/widgets/pos_stepper.dart';
 import 'add_code_dialog.dart';
 
 /// اضافة صنف — الرمز/الاسم/نوع الوزن/الباركود + مربعات الكود والوزن والتاريخ.
@@ -100,7 +101,7 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
                 fontSize: 19,
                 fontWeight: FontWeight.w800)),
         content: const Text(
-          'أدخلت بيانات لم تُحفظ — الرجوع سيمسحها ولن يتم الحفظ. متابعة؟',
+          'أدخلت بيانات ولم تحفظها — هل أنت واثق من الخروج؟',
           textAlign: TextAlign.center,
           style: TextStyle(
               fontFamily: 'Cairo', fontSize: 16, fontWeight: FontWeight.w600, height: 1.6),
@@ -329,7 +330,8 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
       double effCalc(String bc) {
         if (!isVar || !hasWeight || !_segSet(effWStart, effWEnd)) return 0;
         try {
-          return BarcodeParser.calcValue(bc, effWStart, effWEnd, cfgMark);
+          return BarcodeParser.calcValue(bc, effWStart, effWEnd, cfgMark,
+              unit: cfgUnit);
         } catch (_) {
           return 0;
         }
@@ -491,7 +493,8 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
     void refreshValue() {
       final v = !_segSet(s, e)
           ? ''
-          : BarcodeParser.fmt(BarcodeParser.calcValue(_barcode, s, e, mark));
+          : BarcodeParser.fmt(
+              BarcodeParser.calcValue(_barcode, s, e, mark, unit: unit));
       if (valueC.text != v) valueC.text = v;
     }
 
@@ -806,7 +809,8 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
     final wVal = (!wSet || bc.isEmpty)
         ? ''
         : BarcodeParser.fmt(
-            BarcodeParser.calcValue(bc, wStart, wEnd, cfgMark));
+            BarcodeParser.calcValue(bc, wStart, wEnd, cfgMark,
+                unit: cfgUnit));
     final wTileSub = bc.isEmpty
         ? ''
         : (!wSet
@@ -959,16 +963,16 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
     );
   }
 
-  /// حقل الباركود (أرقام فقط) — مشترك بين وضعي "متغير" و"باركود ثابت".
+  /// حقل الباركود — للقراءة فقط: يُملأ من الماسح فقط ولا يقبل الكتابة
+  /// اليدوية (كما طُلب)، فلا يمكن إدخال كود باليد هنا.
   Widget _barcodeInput() {
     return RefField(
       controller: barcodeC,
-      label: 'أدخل الباركود',
+      label: 'امسح الباركود بالماسح',
       textDirection: TextDirection.ltr,
       focusNode: barcodeFocus,
-      keyboardType: TextInputType.number,
-      formatters: [FilteringTextInputFormatter.digitsOnly],
-      textInputAction: TextInputAction.done,
+      readOnly: true,
+      keyboardType: TextInputType.none,
       onChanged: (_) => setState(() {}),
     );
   }
@@ -1076,79 +1080,16 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
     );
   }
 
+  // خانة بداية/نهاية قابلة للكتابة باليد (أرقام فقط) + أسهم —
+  // تقف عند طول الباركود و0 يعني "غير محدد".
   Widget _posStepper(
       String label, int value, int len, ValueChanged<int> onCh) {
-    // 0 = غير محدد (يُعرض —) — السهم لفوق من 0 يروح لـ 1، ولتحت من 1 يرجع لـ 0.
-    return Column(
-      children: [
-        Container(
-          width: double.infinity,
-          padding:
-              const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: RefColors.fieldBorder),
-          ),
-          child: Column(
-            children: [
-              Text(label,
-                  style: const TextStyle(
-                      fontFamily: 'Cairo',
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: RefColors.hintGrey)),
-              Text(value <= 0 ? '—' : '$value',
-                  textDirection: TextDirection.ltr,
-                  style: const TextStyle(
-                      fontFamily: 'Cairo',
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800)),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: _arrowBox(
-                icon: Icons.keyboard_arrow_up_rounded,
-                color: RefColors.green,
-                onTap: () => onCh(
-                    _clampSeg(value <= 0 ? 1 : value + 1, len == 0 ? 99 : len)),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _arrowBox(
-                icon: Icons.keyboard_arrow_down_rounded,
-                color: RefColors.red,
-                onTap: () => onCh(
-                    _clampSeg(value - 1, len == 0 ? 99 : len)),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _arrowBox(
-      {required IconData icon,
-      required Color color,
-      required VoidCallback onTap}) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        height: 56,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color, width: 2),
-        ),
-        child: Icon(icon, size: 40, color: color),
-      ),
+    return PosStepper(
+      label: label,
+      value: value,
+      max: len,
+      allowZero: true,
+      onChanged: onCh,
     );
   }
 

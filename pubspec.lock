@@ -914,6 +914,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.1"
+  sunmi_scanner:
+    dependency: "direct main"
+    description:
+      name: sunmi_scanner
+      sha256: "84998468edef077db5532327c6fca980e63ae9b3b9b19b09a5370137d557955c"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.7"
   supabase:
     dependency: transitive
     description:

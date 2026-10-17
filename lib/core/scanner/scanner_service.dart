@@ -26,10 +26,18 @@ class ScannerConfig {
   final bool beep;
   final bool vibrate;
   final int debounceMs;
+
+  /// منع إخراج الماسح كـ "كيبورد" (keyboard-wedge) على أجهزة SUNMI.
+  ///
+  /// بعض أجهزة L2s Pro بتطلع الكود مرتين: مرة كبثّ (broadcast) ومرة كضغطات
+  /// كيبورد على الحقل المركّز، فيتشوّه/ييجي ناقص. لما تكون `true` نمنع
+  /// ضغطات الكيبورد الفيزيائية ونعتمد على البثّ بس (وهو المفعّل افتراضيًا).
+  final bool blockWedge;
   const ScannerConfig({
     this.beep = true,
     this.vibrate = true,
     this.debounceMs = 400,
+    this.blockWedge = true,
   });
 }
 

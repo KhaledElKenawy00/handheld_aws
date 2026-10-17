@@ -67,13 +67,23 @@ class BarcodeParser {
     }
   }
 
-  /// القيمة النهائية = المقطع / العلامة.
-  static double calcValue(String barcode, int start1, int end1, String mark) {
+  /// معامل تحويل الوحدة LB إلى القيمة المخزّنة (1 LB = 0.545).
+  /// باقي الوحدات (KG) بلا تغيير.
+  static const double lbFactor = 0.545;
+
+  /// معامل الوحدة: 0.545 للـ LB وإلا 1.
+  static double unitFactor(String unit) =>
+      unit.trim().toUpperCase() == 'LB' ? lbFactor : 1.0;
+
+  /// القيمة النهائية = (المقطع / العلامة) × معامل الوحدة.
+  /// [unit] = LB يضرب الناتج في 0.545 (كما هو متفق عليه في التطبيق).
+  static double calcValue(String barcode, int start1, int end1, String mark,
+      {String unit = ''}) {
     final s = slice(barcode, start1, end1);
     final n = sliceInt(s);
     final m = markValue(mark);
-    if (m <= 0) return n.toDouble();
-    return n / m;
+    final raw = m <= 0 ? n.toDouble() : n / m;
+    return raw * unitFactor(unit);
   }
 
   static String fmt(double v) {

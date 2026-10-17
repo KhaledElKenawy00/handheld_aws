@@ -11,6 +11,7 @@ import '../../core/theme/ref_style.dart';
 import '../../core/utils/app_utils.dart';
 import '../../shared/models/entities.dart';
 import '../../shared/widgets/barcode_ruler.dart';
+import '../../shared/widgets/pos_stepper.dart';
 
 const List<String> refMarks = ['1', '10', '100', '1000', '10000'];
 const List<String> refUnits = ['KG', 'LB'];
@@ -79,6 +80,54 @@ Future<void> showAddCodeDialog(
   } catch (_) {}
   if (!context.mounted) return;
 
+  /// لقطة كل المدخلات — لمقارنتها بالابتدائية عند محاولة الخروج بدون حفظ.
+  String snapshot() => [
+        BarcodeParser.clean(barcodeC.text),
+        mark,
+        unit,
+        dateFmt,
+        wStart,
+        wEnd,
+        cStart,
+        cEnd,
+        dStart,
+        dEnd,
+      ].join('|');
+  final initialSnap = snapshot();
+
+  /// تأكيد ترك بيانات غير محفوظة عند الإلغاء/الرجوع.
+  Future<bool> confirmLeave() async {
+    final r = await showDialog<bool>(
+      context: context,
+      builder: (dctx) => AlertDialog(
+        title: const Text('تجاهل البيانات؟',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                fontFamily: 'Cairo',
+                fontSize: 19,
+                fontWeight: FontWeight.w800)),
+        content: const Text(
+          'أدخلت بيانات ولم تحفظها — هل أنت واثق من الخروج؟',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+              fontFamily: 'Cairo',
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              height: 1.6),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(dctx, false),
+              child: const Text('لا')),
+          FilledButton(
+              onPressed: () => Navigator.pop(dctx, true),
+              child: const Text('موافق')),
+        ],
+      ),
+    );
+    return r ?? false;
+  }
+
   int clampCodePos(int v, int len) {
     if (v < 0) return 0;
     if (len <= 0) return v > 99 ? 99 : v;
@@ -91,7 +140,7 @@ Future<void> showAddCodeDialog(
     final v = barcode.isEmpty
         ? ''
         : BarcodeParser.fmt(
-            BarcodeParser.calcValue(barcode, wStart, wEnd, mark));
+            BarcodeParser.calcValue(barcode, wStart, wEnd, mark, unit: unit));
     if (valueC.text != v) valueC.text = v;
   }
 
@@ -146,11 +195,16 @@ Future<void> showAddCodeDialog(
   await refDialog(
     context: context,
     dialogTitle: 'أضف الكود',
+    onCancel: () async {
+      if (snapshot() == initialSnap) return true;
+      return confirmLeave();
+    },
     onSave: () async {
       try {
         final barcode = BarcodeParser.clean(barcodeC.text);
         if (barcode.isEmpty) throw const AppFailure('ادخل الباركود');
-        final calc = BarcodeParser.calcValue(barcode, wStart, wEnd, mark);
+        final calc = BarcodeParser.calcValue(barcode, wStart, wEnd, mark,
+            unit: unit);
         await ref.read(productCodeRepoProvider).add(ProductCode(
               productCode: p.code,
               barcode: barcode,
@@ -200,115 +254,25 @@ Future<void> showAddCodeDialog(
                 BarcodeParser.slice(barcode, dStart, dEnd), dateFmt);
         refreshValue();
 
+        // خانة بداية/نهاية قابلة للكتابة باليد: 0 = غير محدد (كود/تاريخ).
         Widget codeStepper(String label, int value, ValueChanged<int> onCh) {
-          return Column(
-            children: [
-              Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: RefColors.fieldBorder),
-                ),
-                child: Column(
-                  children: [
-                    Text(label,
-                        style: const TextStyle(
-                            fontFamily: 'Cairo',
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: RefColors.hintGrey)),
-                    Text(value == 0 ? '—' : '$value',
-                        textDirection: TextDirection.ltr,
-                        style: const TextStyle(
-                            fontFamily: 'Cairo',
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: _arrowBtn(
-                      icon: Icons.keyboard_arrow_up_rounded,
-                      color: RefColors.green,
-                      onTap: () => setS(() =>
-                          onCh(clampCodePos(value + 1, len == 0 ? 99 : len))),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _arrowBtn(
-                      icon: Icons.keyboard_arrow_down_rounded,
-                      color: RefColors.red,
-                      onTap: () => setS(() =>
-                          onCh(clampCodePos(value - 1, len == 0 ? 99 : len))),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+          return PosStepper(
+            label: label,
+            value: value,
+            max: len,
+            allowZero: true,
+            onChanged: onCh,
           );
         }
 
+        // خانة الوزن: لا تقبل 0 (تبدأ من 1) — مطابقة لمنطق clampPos.
         Widget stepper(String label, int value, ValueChanged<int> onCh) {
-          return Column(
-            children: [
-              Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: RefColors.fieldBorder),
-                ),
-                child: Column(
-                  children: [
-                    Text(label,
-                        style: const TextStyle(
-                            fontFamily: 'Cairo',
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: RefColors.hintGrey)),
-                    Text('$value',
-                        textDirection: TextDirection.ltr,
-                        style: const TextStyle(
-                            fontFamily: 'Cairo',
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800)),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: _arrowBtn(
-                      icon: Icons.keyboard_arrow_up_rounded,
-                      color: RefColors.green,
-                      onTap: () => setS(() => onCh(
-                          BarcodeParser.clampPos(
-                              value + 1, len == 0 ? 99 : len))),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: _arrowBtn(
-                      icon: Icons.keyboard_arrow_down_rounded,
-                      color: RefColors.red,
-                      onTap: () => setS(() => onCh(
-                          BarcodeParser.clampPos(
-                              value - 1, len == 0 ? 99 : len))),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+          return PosStepper(
+            label: label,
+            value: value,
+            max: len,
+            allowZero: false,
+            onChanged: onCh,
           );
         }
 
@@ -321,19 +285,10 @@ Future<void> showAddCodeDialog(
                   Expanded(
                     child: RefField(
                         controller: barcodeC,
-                        label: 'الباركود',
-                        keyboardType: TextInputType.number,
+                        label: 'امسح الباركود بالماسح',
+                        keyboardType: TextInputType.none,
                         textDirection: TextDirection.ltr,
-                        autofocus: true,
-                        textInputAction: TextInputAction.done,
-                        onChanged: (_) => setS(() {
-                              final l = barcodeC.text.trim().length;
-                              if (l > 0) {
-                                wStart =
-                                    BarcodeParser.clampPos(wStart, l);
-                                wEnd = BarcodeParser.clampPos(wEnd, l);
-                              }
-                            }),
+                        readOnly: true,
                         suffixIcon: IconButton(
                           icon: const Icon(
                               Icons.document_scanner_outlined),
@@ -370,16 +325,16 @@ Future<void> showAddCodeDialog(
               Row(
                 children: [
                   Expanded(
-                      child: stepper('البداية', wStart, (v) {
-                    wStart = v;
-                    focusPos = v;
-                  })),
+                      child: stepper('البداية', wStart, (v) => setS(() {
+                            wStart = v;
+                            focusPos = v;
+                          }))),
                   const SizedBox(width: 12),
                   Expanded(
-                      child: stepper('النهاية', wEnd, (v) {
-                    wEnd = v;
-                    focusPos = v;
-                  })),
+                      child: stepper('النهاية', wEnd, (v) => setS(() {
+                            wEnd = v;
+                            focusPos = v;
+                          }))),
                 ],
               ),
               const SizedBox(height: 8),
@@ -488,11 +443,11 @@ Future<void> showAddCodeDialog(
                 children: [
                   Expanded(
                       child: codeStepper('بداية الكود', cStart,
-                          (v) => cStart = v)),
+                          (v) => setS(() => cStart = v))),
                   const SizedBox(width: 12),
                   Expanded(
                       child: codeStepper(
-                          'نهاية الكود', cEnd, (v) => cEnd = v)),
+                          'نهاية الكود', cEnd, (v) => setS(() => cEnd = v))),
                 ],
               ),
               const SizedBox(height: 8),
@@ -542,11 +497,11 @@ Future<void> showAddCodeDialog(
                 children: [
                   Expanded(
                       child: codeStepper('بداية التاريخ', dStart,
-                          (v) => dStart = v)),
+                          (v) => setS(() => dStart = v))),
                   const SizedBox(width: 12),
                   Expanded(
                       child: codeStepper(
-                          'نهاية التاريخ', dEnd, (v) => dEnd = v)),
+                          'نهاية التاريخ', dEnd, (v) => setS(() => dEnd = v))),
                 ],
               ),
               const SizedBox(height: 8),
@@ -586,24 +541,5 @@ Future<void> showAddCodeDialog(
   await Future.delayed(const Duration(milliseconds: 500));
   barcodeC.dispose();
   valueC.dispose();
-}
-
-Widget _arrowBtn(
-    {required IconData icon,
-    required Color color,
-    required VoidCallback onTap}) {
-  return InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(10),
-    child: Container(
-      height: 56,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color, width: 2),
-      ),
-      child: Icon(icon, size: 40, color: color),
-    ),
-  );
 }
 

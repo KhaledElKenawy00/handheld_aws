@@ -817,7 +817,8 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
         final p =
             await ref.read(productRepoProvider).findByCode(t.productCode);
         var w =
-            BarcodeParser.calcValue(code, t.wStart, t.wEnd, t.mark);
+            BarcodeParser.calcValue(code, t.wStart, t.wEnd, t.mark,
+                unit: t.unit);
         // صنف بلا وزن باركودي → صفر.
         if (p != null && !p.hasWeight) w = 0;
         if (!mounted) return;
@@ -875,8 +876,9 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
 
   String _f(double v) => v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
 
-  /// تنسيق الوزن برقمين عشريين فقط (مثال: 21.50).
-  String _f2(double v) => v.toStringAsFixed(2);
+  /// تنسيق الوزن بثلاث خانات عشرية (مثال: 21.001) حتى لا تُفقد دقة
+  /// العلامة 1000.
+  String _f2(double v) => v.toStringAsFixed(3);
 
   /// حساب وزن الوحدة تلقائيًا من الباركود الممسوح (يُستخدم كقيمة مقترحة
   /// لحقل الوزن اليدوي وكـ fallback لو الحقل فاضي عند الإضافة).
@@ -1072,7 +1074,8 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
         final ts = await ref.read(productCodeRepoProvider).all();
         final t = _matchTemplate(scanned, ts);
         if (t != null) {
-          final w = BarcodeParser.calcValue(scanned, t.wStart, t.wEnd, t.mark);
+          final w = BarcodeParser.calcValue(scanned, t.wStart, t.wEnd, t.mark,
+              unit: t.unit);
           if (w > 0) return w;
         }
       } catch (_) {}
@@ -1084,8 +1087,8 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
         for (final c in pcs) {
           if (!BarcodeResolver.matchesTemplate(scanned, c)) continue;
           if (c.wStart > 0 && c.wEnd > 0) {
-            final w =
-                BarcodeParser.calcValue(scanned, c.wStart, c.wEnd, c.mark);
+            final w = BarcodeParser.calcValue(scanned, c.wStart, c.wEnd, c.mark,
+                unit: c.unit);
             if (w > 0) return w;
           }
           if (c.weight > 0) return c.weight;
@@ -1319,19 +1322,17 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
                   controller: barcodeC,
                   focusNode: barcodeFocus,
                   autofocus: true,
+                  readOnly: true,
+                  keyboardType: TextInputType.none,
                   textAlign: TextAlign.right,
                   style: const TextStyle(
                       fontFamily: 'Cairo', fontSize: 22),
                   decoration: InputDecoration(
                     hintText: 'امسح الباركود بالماسح',
                     helperText: lastScanned == null
-                        ? 'امسح أو اكتب الرقم — يُضاف تلقائيًا تحت'
+                        ? 'امسح الباركود بالماسح — يُضاف تلقائيًا تحت'
                         : 'آخر مسح: $lastScanned',
                   ),
-                        textInputAction: TextInputAction.done,
-                        // نقرأ النص الحالي لا القيمة المرسلة: لو كان البث قد
-                        // عالج المسحة ومسح الحقل نتجاهل الـ Enter المتأخر.
-                        onSubmitted: (_) => _onScanAuto(barcodeC.text),
                       ),
                 const SizedBox(height: 10),
                 Row(
@@ -1455,9 +1456,7 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
                     for (final g in gs)
                       CellLineData(
                           code: g.code,
-                          name: g.scans.length > 1
-                              ? '${g.name} (${g.scans.length} مسحات)'
-                              : g.name,
+                          name: g.name,
                           qty: g.qty,
                           weight: g.weight,
                           price: g.price),
@@ -1477,6 +1476,7 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
                   onEdit: (i) => _editGrouped(gs[i]),
                   onDelete: (i) => _deleteGrouped(gs[i]),
                   fontScale: 1.3,
+                  big: true,
                 ),
               );
             }),
@@ -1810,7 +1810,7 @@ class _GroupedEditDialogState extends ConsumerState<_GroupedEditDialog> {
 
   String _f(double v) =>
       v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
-  String _f2(double v) => v.toStringAsFixed(2);
+  String _f2(double v) => v.toStringAsFixed(3);
 
   Future<List<_DetailsLine>> _fetchScans() async {
     final out = <_DetailsLine>[];

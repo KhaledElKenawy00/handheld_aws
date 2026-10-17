@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioManager
 import android.os.Build
+import android.view.KeyEvent
 import com.honeywell.aidc.AidcManager
 import com.honeywell.aidc.BarcodeFailureEvent
 import com.honeywell.aidc.BarcodeReadEvent
@@ -16,34 +17,29 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 /**
- * SUNMI L2s Pro scanner bridge — no third-party SDK needed.
+ * Native scanner bridge. Only ONE driver talks to the scan head at a time:
  *
- * RECEIVE (official SUNMI broadcast + fallbacks for L2s Pro firmware variants):
- *   primary: `com.sunmi.scanner.ACTION_DATA_CODE_RECEIVED`, String extra `data`
- *   (Broadcast Output mode). Forwarded to Flutter via EventChannel
- *   `com.sanad.scanner/stream`. In KeyEvent/keyboard-wedge mode the physical
- *   scan key types directly into the focused TextField — no code needed.
- *   Fallbacks handled here: `android.intent.ACTION_DECODE_DATA`,
- *   `com.sunmi.scanner.ACTION_SCAN_RESULT`, `com.sunmi.scanner.ACTION_DECODE`,
- *   `com.sunmi.scan.ACTION_DATA_RECEIVED`, extras `barcode`/`code`/
- *   `scan_result`/`value`/`source` + exhaustive scan of ANY String/byte[]
- *   extra in the bundle (undocumented firmware keys).
+ * SUNMI (L2s Pro etc.) — handled entirely by the Flutter `sunmi_scanner`
+ *   plugin, which binds the SUNMI scanner service via AIDL (scan()/stop())
+ *   and listens to `com.sunmi.scanner.ACTION_DATA_CODE_RECEIVED`. This class
+ *   does NOT read SUNMI decodes anymore, so a scan is never delivered twice.
  *
- * TRIGGER (software scan from inside the app):
- *   MethodChannel `com.sanad.scanner/control` methods `trigger` / `stop`
- *   are translated here into the documented SUNMI scan-control broadcasts so
- *   the built-in 1D/2D head starts scanning without opening any camera.
- *
- * HONEYWELL: uses the official Data Collection SDK bundled as
- *   `app/libs/honeywell.aar` (`AidcManager`/`BarcodeReader`). On listen the
- *   app creates a `BarcodeReader`, claims the internal scanner and forwards
- *   `onBarcodeEvent` decodes to Flutter. `pause`/`resume` flip
- *   `PROPERTY_TRIGGER_CONTROL_MODE` and the notification (beep/vibrate)
- *   properties directly on the claimed reader — the only reliable way to
- *   silence the beep on EDA57 firmware. The Data Collection Intent API
- *   broadcasts are kept as a fallback for devices where `AidcManager`
+ * HONEYWELL — uses the official Data Collection SDK bundled as
+ *   `app/libs/honeywell.aar` (`AidcManager`/`BarcodeReader`). It is attached
+ *   lazily through the `initHoneywell` control call, which the Dart side only
+ *   issues on genuine Honeywell hardware. On SUNMI units that carry a
+ *   Honeywell scan engine, claiming the head through this SDK fought the SUNMI
+ *   scanner service and produced partial/garbled reads — hence the split.
+ *   `pause`/`resume` flip `PROPERTY_TRIGGER_CONTROL_MODE` and the notification
+ *   (beep/vibrate) properties directly on the claimed reader. The Data
+ *   Collection Intent API broadcast is kept as a fallback when `AidcManager`
  *   fails to connect. Requires manifest permission
  *   `com.honeywell.decode.permission.DECODE`.
+ *
+ * SHARED control (MethodChannel `com.sanad.scanner/control`):
+ *   `initHoneywell`, `trigger`, `stop`, `pause`, `resume`. `pause`/`resume`
+ *   also use the documented SUNMI `ACTION_TRIGGER_CONTROL` broadcast to
+ *   disable/enable the physical trigger while a dialog is on screen.
  */
 class MainActivity : FlutterActivity(),
     AidcManager.CreatedCallback,
@@ -51,18 +47,9 @@ class MainActivity : FlutterActivity(),
     companion object {
         const val STREAM = "com.sanad.scanner/stream"
         const val CONTROL = "com.sanad.scanner/control"
-        const val ACTION_DATA = "com.sunmi.scanner.ACTION_DATA_CODE_RECEIVED"
-        const val ACTION_DECODE = "android.intent.ACTION_DECODE_DATA"
-        const val ACTION_SCAN_RESULT = "com.sunmi.scanner.ACTION_SCAN_RESULT"
-        // Variants seen on other SUNMI firmwares — harmless to listen.
-        const val ACTION_DECODE2 = "com.sunmi.scanner.ACTION_DECODE"
-        const val ACTION_SCAN_DATA = "com.sunmi.scan.ACTION_DATA_RECEIVED"
-        // Documented SUNMI scan-control actions (L2 series / P series).
-        // Sent as broadcasts; harmless on non-SUNMI devices.
-        const val ACTION_START = "com.sunmi.scanner.ACTION_START_SCAN"
+        // Documented SUNMI scan-control action (L2 series / P series).
+        // Sent as a broadcast; harmless on non-SUNMI devices.
         const val ACTION_STOP = "com.sunmi.scanner.ACTION_STOP_SCAN"
-        const val ACTION_TRIG = "com.sunmi.scanner.ACTION_TRIG_SCAN"
-        const val ACTION_ENABLE = "com.sunmi.scanner.ACTION_ENABLE_SCAN"
         // Official SUNMI broadcast to enable/disable the PHYSICAL trigger
         // button at the firmware level (Boolean extra `enable`). Disabling it
         // is the only reliable way to stop the hardware scanning (and its
@@ -84,11 +71,29 @@ class MainActivity : FlutterActivity(),
 
     private var events: EventChannel.EventSink? = null
     private var receiver: BroadcastReceiver? = null
+    // SUNMI: drop the scanner's keyboard-wedge keystrokes (see setSuppressWedge).
+    private var suppressWedge = false
     // ── Honeywell SDK state ──
     private var aidcManager: AidcManager? = null
     private var barcodeReader: BarcodeReader? = null
     private var hwReady = false
     private var hwPaused = false
+
+    /**
+     * On SUNMI we consume the physical scanner's character keystrokes so the
+     * keyboard-wedge output never reaches the focused Flutter field (the code
+     * already arrives cleanly through the broadcast). Only printable
+     * characters are dropped — navigation/volume/back keys pass through. The
+     * on-screen keyboard is NOT affected: IMEs commit text, not key events.
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (suppressWedge && event.action == KeyEvent.ACTION_DOWN &&
+            event.unicodeChar != 0
+        ) {
+            return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -97,27 +102,43 @@ class MainActivity : FlutterActivity(),
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(args: Any?, sink: EventChannel.EventSink) {
                     events = sink
-                    registerSunmiReceiver()
-                    // On Honeywell devices this attaches the SDK to the
-                    // DataCollection service so the physical scan button
-                    // delivers decodes straight to onBarcodeEvent().
-                    initHoneywellSdk()
+                    registerHoneywellFallbackReceiver()
+                    // NOTE: we intentionally do NOT attach the Honeywell SDK
+                    // here. On SUNMI L2s Pro units that ship a Honeywell scan
+                    // engine, claiming the scanner through the Honeywell SDK
+                    // fights the SUNMI scanner service over the same head and
+                    // produces partial/garbled reads. The Dart side detects the
+                    // device and calls `initHoneywell` only on real Honeywell
+                    // hardware.
                 }
                 override fun onCancel(args: Any?) {
                     events = null
-                    unregisterSunmiReceiver()
+                    unregisterHoneywellFallbackReceiver()
                 }
             })
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CONTROL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                    // Attach the Honeywell SDK on demand. Called by Dart only
+                    // on genuine Honeywell hardware (never on SUNMI), so the
+                    // two scanner drivers never compete for the same head.
+                    "initHoneywell" -> {
+                        initHoneywellSdk()
+                        result.success(true)
+                    }
+                    // SUNMI: swallow the keyboard-wedge output of the scanner so
+                    // it can't be typed on top of the broadcast decode inside
+                    // the focused field (which corrupts/shaves the code). The
+                    // soft keyboard is unaffected (it commits text, not keys).
+                    "setSuppressWedge" -> {
+                        suppressWedge = call.argument<Boolean>("value") ?: false
+                        result.success(true)
+                    }
                     "trigger" -> {
-                        // L2s Pro needs ENABLE + START + TRIG on some firmwares.
-                        sendScanBroadcast(ACTION_ENABLE)
-                        sendScanBroadcast(ACTION_START)
-                        sendScanBroadcast(ACTION_TRIG)
                         // Honeywell: make sure we own the scanner, then scan.
+                        // SUNMI software-trigger is handled by the Flutter
+                        // `sunmi_scanner` plugin (AIDL scan()/stop()).
                         if (!hwReady) initHoneywellSdk()
                         setHoneywellMuted(false)
                         try { barcodeReader?.softwareTrigger(true) } catch (_: Exception) {}
@@ -385,28 +406,27 @@ class MainActivity : FlutterActivity(),
         return null
     }
 
-    private fun registerSunmiReceiver() {
+    /**
+     * Honeywell Data Collection Intent API fallback only. SUNMI decodes are
+     * NOT read here anymore — they arrive through the Flutter `sunmi_scanner`
+     * plugin. Listening to the SUNMI broadcast actions here as well was
+     * emitting the same scan twice (and the loose `extractCode` scan could
+     * pick up a non-payload extra, which showed up as a partial barcode).
+     */
+    private fun registerHoneywellFallbackReceiver() {
         if (receiver != null) return
         receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent == null) return
-                when (intent.action) {
-                    ACTION_DATA, ACTION_DECODE, ACTION_SCAN_RESULT,
-                    ACTION_DECODE2, ACTION_SCAN_DATA, HW_DATA_ACTION -> {
-                        val code = extractCode(intent)
-                        if (!code.isNullOrEmpty()) {
-                            try { events?.success(code) } catch (_: Exception) {}
-                        }
+                if (intent.action == HW_DATA_ACTION) {
+                    val code = extractCode(intent)
+                    if (!code.isNullOrEmpty()) {
+                        try { events?.success(code) } catch (_: Exception) {}
                     }
                 }
             }
         }
         val filter = IntentFilter().apply {
-            addAction(ACTION_DATA)
-            addAction(ACTION_DECODE)
-            addAction(ACTION_SCAN_RESULT)
-            addAction(ACTION_DECODE2)
-            addAction(ACTION_SCAN_DATA)
             addAction(HW_DATA_ACTION)
         }
         try {
@@ -419,13 +439,13 @@ class MainActivity : FlutterActivity(),
         } catch (_: Exception) {}
     }
 
-    private fun unregisterSunmiReceiver() {
+    private fun unregisterHoneywellFallbackReceiver() {
         try { receiver?.let { unregisterReceiver(it) } } catch (_: Exception) {}
         receiver = null
     }
 
     override fun onDestroy() {
-        unregisterSunmiReceiver()
+        unregisterHoneywellFallbackReceiver()
         try { barcodeReader?.release() } catch (_: Exception) {}
         try { aidcManager?.close() } catch (_: Exception) {}
         barcodeReader = null

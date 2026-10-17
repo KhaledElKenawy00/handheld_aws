@@ -69,7 +69,8 @@ class BarcodeResolver {
     }
     if (s.isNotEmpty && a <= 1 && b >= s.length) return 0;
     try {
-      return BarcodeParser.calcValue(scanned, t.wStart, t.wEnd, t.mark);
+      return BarcodeParser.calcValue(scanned, t.wStart, t.wEnd, t.mark,
+          unit: t.unit);
     } catch (_) {
       return 0;
     }

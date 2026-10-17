@@ -95,8 +95,9 @@ class PdfService {
   /// ترويسة 3×3 (رقم/نوع/تاريخ — كود/اسم الطرف/إجمالي القيمة —
   /// إجمالي الكمية/إجمالي الوزن/المستخدم) + جدول (م/الصنف/الكمية/
   /// الوزن/السعر/القيمة) بترتيب: أولًا صف مدمج لكل صنف (كل الأصناف
-  /// بكمياتها)، ثم — في التفصيلي فقط — تفصيلة كل صنف (صف عنوان +
-  /// صف لكل مسحة بوزنها تحت عمود الصنف)، ثم صف المجموع.
+  /// بكمياتها) + صف المجموع، ثم — في التفصيلي فقط — خط أسود بولد
+  /// يفصل الإجماليات عن التفصيل، بعدها تفصيلة كل صنف في عمود مستقل
+  /// (تتجاوز لسطر جديد عند الامتلاء).
   /// الإجمالي: الأصناف المدمجة فقط (صنف + كمية + وزن إجمالي)
   /// بدون تفصيل المسحات.
   /// النص العربي بترتيبه الطبيعي ويُرسم RTL عبر textDirection
@@ -169,14 +170,8 @@ class PdfService {
             // القسم الأول: صف مدمج لكل صنف (كل الأصناف بكمياتها).
             for (var gi = 0; gi < order.length; gi++)
               _mergedRow(order[gi], groups[order[gi]]!, gi + 1),
-            // القسم الثاني (تفصيلي فقط): تفصيلة كل صنف — صف عنوان
-            // (الصنف + اسمه) ثم صف لكل مسحة (وزنها تحت عمود الصنف
-            // + رقمها). الإجمالي يتخطى التفصيلة.
-            if (detailed)
-              for (var gi = 0; gi < order.length; gi++)
-                ..._detailRows(order[gi], groups[order[gi]]!),
-            // صف المجموع: في التفصيلي (زي الصورة) إجمالي الوزن +
-            // المجموع فقط، وفي الإجمالي إجمالي القيمة والوزن والكمية.
+            // صف المجموع: في التفصيلي إجمالي الوزن + المجموع فقط،
+            // وفي الإجمالي إجمالي القيمة والوزن والكمية.
             if (detailed)
               pw.TableRow(children: [
                 _ocell(''),
@@ -197,6 +192,22 @@ class PdfService {
               ]),
           ],
         ),
+        // القسم الثاني (التفصيلي فقط): خط أسود بولد يفصل الإجماليات عن
+        // التفصيل، ثم تفصيلة كل صنف عمود في شبكة خلايا زي إكسل — كل
+        // صنف عمود، وكل مسحة سطر بوزنها في خلاياه.
+        if (detailed) ...[
+          pw.SizedBox(height: 6),
+          pw.Container(
+            height: 2.5,
+            decoration: const pw.BoxDecoration(
+              border: pw.Border(
+                top: pw.BorderSide(width: 2.5, color: PdfColors.black),
+              ),
+            ),
+          ),
+          pw.SizedBox(height: 8),
+          ..._detailGrids(order, groups),
+        ],
       ],
     ));
     return _save(doc, folderPath, fileName);
@@ -225,29 +236,76 @@ class PdfService {
     ]);
   }
 
-  /// تفصيلة صنف واحد بنفس شكل الصورة: صف عنوان (الصنف + اسمه)
-  /// ثم صف لكل مسحة (وزنها تحت عمود الصنف + رقم المسحة).
-  List<pw.TableRow> _detailRows(String code, List<DocLine> scans) {
-    final rows = <pw.TableRow>[
-      pw.TableRow(children: [
-        _ocell(''),
-        _ocell(''),
-        _ocell(''),
-        _ocell(''),
-        _ocell('الصنف: ${_groupName(code, scans)}', bold: true),
-        _ocell('مسلسل', bold: true),
-      ]),
-      for (var i = 0; i < scans.length; i++)
+  /// خلية مدمجة صغيرة لشبكة التفصيل — خط وحشو أصغر حتى تستوعب الصفحة
+  /// أكبر عدد من القراءات (الأوزان أرقام قصيرة لا تحتاج عرضًا كبيرًا).
+  pw.Widget _gcell(String s, {bool bold = false, double size = 7}) =>
+      pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(horizontal: .8, vertical: .8),
+        child: pw.Text(s,
+            textAlign: pw.TextAlign.center,
+            style:
+                pw.TextStyle(font: bold ? _arBold : _arFont, fontSize: size)),
+      );
+
+  /// عدد أعمدة الأصناف في شبكة التفصيل (زي شيت الإكسل).
+  static const int _itemCols = 14;
+
+  /// شبكة تفصيل الأصناف زي شيت إكسل: عمود «م» للمسلسل + [_itemCols]
+  /// عمودًا للأصناف في كل صف، وكل مسحة سطر بوزنها في خلاياه (وخلايا
+  /// فاضية للأصناف اللي خلصت). الشبكة ثابتة 14 عمودًا حتى لو الأصناف
+  /// أقل (خلايا فاضية) أو أكثر (جدول تالٍ تحته بنفس المقاس).
+  List<pw.Widget> _detailGrids(
+      List<String> order, Map<String, List<DocLine>> groups) {
+    const perRow = _itemCols;
+    final widgets = <pw.Widget>[];
+    for (var start = 0; start < order.length; start += perRow) {
+      final end = start + perRow > order.length ? order.length : start + perRow;
+      final chunk = order.sublist(start, end);
+      // نكمّل لـ perRow عمودًا بخلايا فاضية حتى تبقى الشبكة ثابتة.
+      final padded = <String?>[
+        for (var k = 0; k < perRow; k++) k < chunk.length ? chunk[k] : null,
+      ];
+      var maxScan = 0;
+      for (final c in chunk) {
+        final n = groups[c]!.length;
+        if (n > maxScan) maxScan = n;
+      }
+      final rows = <pw.TableRow>[
         pw.TableRow(children: [
-          _ocell(''),
-          _ocell(''),
-          _ocell(''),
-          _ocell(''),
-          _ocell(scans[i].weight.toString()),
-          _ocell('${i + 1}'),
+          _gcell('م', bold: true, size: 6),
+          for (final c in padded)
+            _gcell(c == null ? '' : _groupName(c, groups[c]!),
+                bold: true, size: 6),
         ]),
-    ];
-    return rows;
+        for (var i = 0; i < maxScan; i++)
+          pw.TableRow(children: [
+            _gcell('${i + 1}', size: 6),
+            for (final c in padded)
+              _gcell(c == null || i >= groups[c]!.length
+                  ? ''
+                  : _f3(groups[c]![i].weight)),
+          ]),
+        pw.TableRow(children: [
+          _gcell('مجموع', bold: true, size: 6),
+          for (final c in padded)
+            _gcell(
+                c == null
+                    ? ''
+                    : _f3(groups[c]!.fold(0.0, (a, b) => a + b.weight)),
+                bold: true),
+        ]),
+      ];
+      widgets.add(pw.Table(
+        border: pw.TableBorder.all(width: .4, color: PdfColors.grey700),
+        columnWidths: {
+          0: const pw.FixedColumnWidth(18),
+          for (var k = 1; k <= perRow; k++) k: const pw.FlexColumnWidth(1),
+        },
+        children: rows,
+      ));
+      if (end < order.length) widgets.add(pw.SizedBox(height: 6));
+    }
+    return widgets;
   }
 
   /// زر PDF في شاشة تفاصيل الاستلام — نفس شكل صورة الأوردر.

@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'app.dart';
 import 'core/config/supabase_config.dart';
+import 'core/constants/app_constants.dart';
 import 'core/database/database_helper.dart';
 import 'core/scanner/scanner_providers.dart';
 import 'core/scanner/scanner_route_observer.dart';
@@ -35,8 +36,19 @@ Future<void> main() async {
       final ms = rows.isNotEmpty
           ? int.tryParse((rows.first['value'] ?? '400').toString()) ?? 400
           : 400;
+      final blockRows = await db.query(
+        'app_settings',
+        where: 'key=?',
+        whereArgs: [AppConstants.kScannerBlockKeyboard],
+      );
+      final blockWedge = blockRows.isEmpty
+          ? true
+          : (blockRows.first['value'] ?? '1').toString() != '0';
       if (scanner is SunmiScannerService) {
-        scanner.configure(ScannerConfig(debounceMs: ms.clamp(100, 2000)));
+        scanner.configure(ScannerConfig(
+          debounceMs: ms.clamp(100, 2000),
+          blockWedge: blockWedge,
+        ));
       }
     } catch (_) {}
   } catch (e) {

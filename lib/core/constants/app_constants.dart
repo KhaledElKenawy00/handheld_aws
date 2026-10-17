@@ -42,6 +42,8 @@ class AppConstants {
   static const String kScannerBeep = 'scanner_beep';
   static const String kScannerVibrate = 'scanner_vibrate';
   static const String kScannerDebounce = 'scanner_debounce_ms';
+  // منع "إخراج الكيبورد" للماسح (keyboard-wedge) حتى لا يتزاحم مع البثّ.
+  static const String kScannerBlockKeyboard = 'scanner_block_keyboard';
   // الإرسال للكمبيوتر عبر الشبكة المحلية (SMB)
   static const String kPcHost = 'pc_host';
   static const String kPcShare = 'pc_share';
