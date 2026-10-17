@@ -5,7 +5,7 @@
 /// تلقائيًا (من أول الباركود لآخره مع علامة 1) فيظهر الوزن هو رقم الباركود.
 /// v5: سعر بيع افتراضي للصنف (products.price) — يُملأ تلقائيًا في النقدي.
 class Schema {
-  static const int version = 5;
+  static const int version = 6;
 
   /// أنواع العمليات الست + الوظائف السبع للصلاحيات (نفس ألفاظ الصور).
   static const List<String> opKinds = [

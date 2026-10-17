@@ -38,7 +38,7 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
   StreamSubscription? scanSub;
   String? lastScanned;
 
-  String weightType = 'متغير'; // متغير | ثابت
+  String weightType = 'متغير'; // متغير | ثابت | باركود ثابت
   // الكود والوزن مفعّلان افتراضيًا (الأهم) — التاريخ اختياري مطفي.
   // الوزن شغال لكن لو لم تُدخل له قيمة/مقطع يُحفظ صفرًا تلقائيًا.
   bool hasCode = true;
@@ -259,25 +259,11 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
       if (!mounted) return;
       final code = BarcodeParser.clean(raw);
       if (code.isEmpty) return;
-      // لا يوجد حقل باركود في وضع الوزن الثابت — تجاهل المسح.
-      if (weightType != 'متغير') return;
+      // حقل الباركود مطلوب في وضعي "متغير" و"باركود ثابت" فقط.
+      if (weightType != 'متغير' && weightType != 'باركود ثابت') return;
       _consumeScan(code);
     } catch (e) {
       if (mounted) refError(context, 'تعذر استقبال المسحة: $e');
-    }
-  }
-
-  /// زر المسح البرمجي لحقل الباركود — بديل مؤكد لو وضع البث معطّل
-  /// في إعدادات الماسح (زر الجهاز الفيزيائي يبقى الأساسي).
-  Future<void> _triggerScan() async {
-    barcodeFocus.requestFocus();
-    try {
-      await ref.read(scannerServiceProvider).triggerScan();
-    } catch (_) {
-      if (mounted) {
-        refToast(context,
-            'اضغط زر المسح الفيزيائي في الجهاز — الحقل جاهز للاستقبال');
-      }
     }
   }
 
@@ -302,20 +288,46 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
       refError(context, 'ادخل الرمز والاسم');
       return;
     }
+    final isVar = weightType == 'متغير';
+    final isFixedBc = weightType == 'باركود ثابت';
+    final barcode =
+        barcodeC.text.trim().isEmpty ? null : barcodeC.text.trim();
+    // الوزن المتغير: الباركود + مقطع الوزن + مقطع الكود إجباريون.
+    if (isVar) {
+      if (barcode == null) {
+        refError(context, 'امسح/ادخل الباركود أولًا');
+        return;
+      }
+      if (!(hasWeight && _segSet(wStart, wEnd))) {
+        refError(context, 'حدّد مقطع الوزن (إدخال الوزن إجباري)');
+        return;
+      }
+      if (!(hasCode && _segSet(cStart, cEnd))) {
+        refError(context, 'حدّد مقطع الكود (إدخال الكود إجباري)');
+        return;
+      }
+    }
+    // الباركود الثابت: لازم باركود (وهو نفسه كود الصنف).
+    if (isFixedBc && barcode == null) {
+      refError(context, 'امسح الباركود أولًا');
+      return;
+    }
     try {
       final repo = ref.read(productRepoProvider);
-      final barcode =
-          barcodeC.text.trim().isEmpty ? null : barcodeC.text.trim();
-      // المقاطع الفعالة: المطفي يُحفظ صفرًا (غير محدد) حتى لا يُستخرج
-      // وزن/تاريخ وهمي تلقائيًا — والوزن يُحفظ صفرًا لو لم يُحدد.
-      final effWStart = hasWeight ? wStart : 0;
-      final effWEnd = hasWeight ? wEnd : 0;
-      final effCStart = hasCode ? cStart : 0;
-      final effCEnd = hasCode ? cEnd : 0;
-      final effDStart = hasDate ? dStart : 0;
-      final effDEnd = hasDate ? dEnd : 0;
+      // المقاطع الفعالة: المطفي/غير المتغير يُحفظ صفرًا (غير محدد) —
+      // الباركود الثابت = الكود هو الباركود كله (مقطع 0) بلا وزن/تاريخ.
+      final effWStart = (isVar && hasWeight) ? wStart : 0;
+      final effWEnd = (isVar && hasWeight) ? wEnd : 0;
+      final effCStart = (isVar && hasCode) ? cStart : 0;
+      final effCEnd = (isVar && hasCode) ? cEnd : 0;
+      final effDStart = (isVar && hasDate) ? dStart : 0;
+      final effDEnd = (isVar && hasDate) ? dEnd : 0;
+      // أعلام الحفظ: الباركود الثابت بلا وزن ولا تاريخ وكوده كامل الباركود.
+      final saveHasWeight = isFixedBc ? false : hasWeight;
+      final saveHasCode = isFixedBc ? true : hasCode;
+      final saveHasDate = isFixedBc ? false : hasDate;
       double effCalc(String bc) {
-        if (!hasWeight || !_segSet(effWStart, effWEnd)) return 0;
+        if (!isVar || !hasWeight || !_segSet(effWStart, effWEnd)) return 0;
         try {
           return BarcodeParser.calcValue(bc, effWStart, effWEnd, cfgMark);
         } catch (_) {
@@ -331,14 +343,14 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
           weightType: weightType,
           fixedWeight: AppUtils.parseNum(weightC.text),
           barcode: barcode,
-          hasCode: hasCode,
-          hasWeight: hasWeight,
-          hasDate: hasDate,
+          hasCode: saveHasCode,
+          hasWeight: saveHasWeight,
+          hasDate: saveHasDate,
           hasMazraa: old?.hasMazraa ?? true,
         ));
         // احفظ مقاطع الباركود أيضًا (كانت تضيع عند التعديل — فيبقى
         // مقطع الكود/الوزن المحدد من المستخدم فعالًا للمسح في الطلب).
-        if (weightType == 'متغير' && barcode != null && barcode.isNotEmpty) {
+        if ((isVar || isFixedBc) && barcode != null && barcode.isNotEmpty) {
           try {
             final calc = effCalc(barcode);
             final codeRepo = ref.read(productCodeRepoProvider);
@@ -415,11 +427,11 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
           weightType: weightType,
           fixedWeight: AppUtils.parseNum(weightC.text),
           barcode: barcode,
-          hasCode: hasCode,
-          hasWeight: hasWeight,
-          hasDate: hasDate,
+          hasCode: saveHasCode,
+          hasWeight: saveHasWeight,
+          hasDate: saveHasDate,
         ));
-        if (weightType == 'متغير' && barcode != null && barcode.isNotEmpty) {
+        if ((isVar || isFixedBc) && barcode != null && barcode.isNotEmpty) {
           try {
             final calc = effCalc(barcode);
             await ref.read(productCodeRepoProvider).add(ProductCode(
@@ -658,10 +670,10 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
                                 }))),
                   ],
                 ),
-                const SizedBox(height: 8),
-                _sliceBox(slice.isEmpty
-                    ? 'الكود: — (غير محدد = الباركود كله هو الكود)'
-                    : 'الكود [$s-$e]: $slice'),
+                if (slice.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _sliceBox('الكود [$s-$e]: $slice'),
+                ],
               ],
             ),
           );
@@ -796,17 +808,17 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
         : BarcodeParser.fmt(
             BarcodeParser.calcValue(bc, wStart, wEnd, cfgMark));
     final wTileSub = bc.isEmpty
-        ? 'اضغط للخيارات'
+        ? ''
         : (!wSet
             ? '— (غير محدد = صفر)'
             : '$wSlice ÷ $cfgMark = $wVal $cfgUnit');
     final cTileSub = bc.isEmpty
-        ? 'اضغط للخيارات'
+        ? ''
         : (!cSet
             ? '— (الباركود كله هو الكود)'
             : BarcodeParser.slice(bc, cStart, cEnd));
     final dTileSub = bc.isEmpty
-        ? cfgDateFmt
+        ? ''
         : (!dSet
             ? '— (بدون تاريخ)'
             : BarcodeParser.formatDateSlice(
@@ -841,6 +853,8 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
                   textDirection: TextDirection.ltr,
                   focusNode: codeFocus,
                   autofocus: !isEdit,
+                  keyboardType: TextInputType.number,
+                  formatters: [FilteringTextInputFormatter.digitsOnly],
                   textInputAction: TextInputAction.next,
                   onSubmitted: (_) => nameFocus.requestFocus(),
                 ),
@@ -861,7 +875,8 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
                   focusNode: nameFocus,
                   textInputAction: TextInputAction.next,
                   onSubmitted: (_) {
-                    if (weightType == 'متغير') {
+                    if (weightType == 'متغير' ||
+                        weightType == 'باركود ثابت') {
                       barcodeFocus.requestFocus();
                     }
                   },
@@ -872,46 +887,21 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
                     style: TextStyle(fontFamily: 'Cairo', fontSize: 19, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 6),
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    _radio('وزن متغير', 'متغير', RefColors.green),
-                    _radio('ثابت', 'ثابت', RefColors.red),
+                    Expanded(
+                        child: _radio('وزن متغير', 'متغير', RefColors.green)),
+                    Expanded(child: _radio('ثابت', 'ثابت', RefColors.red)),
+                    Expanded(
+                        child: _radio(
+                            'باركود ثابت', 'باركود ثابت', RefColors.primary)),
                   ],
                 ),
                 const SizedBox(height: 12),
                 if (weightType == 'متغير') ...[
-                  // حقل الباركود وحده يقبل المسح: زر فيزيائي + زر مسح برمجي.
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: RefField(
-                          controller: barcodeC,
-                          label: 'أدخل الباركود',
-                          textDirection: TextDirection.ltr,
-                          focusNode: barcodeFocus,
-                          textInputAction: TextInputAction.done,
-                          onChanged: (_) => setState(() {}),
-                          suffixIcon: IconButton(
-                            icon: const Icon(
-                                Icons.document_scanner_outlined),
-                            tooltip: 'مسح بالماسح',
-                            onPressed: _triggerScan,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton.icon(
-                        onPressed: _triggerScan,
-                        icon: const Icon(
-                            Icons.document_scanner_outlined),
-                        label: const Text('مسح'),
-                      ),
-                    ],
-                  ),
+                  _barcodeInput(),
                   const SizedBox(height: 4),
                   const Text(
-                    'الكود والوزن مفعّلان افتراضيًا — لو الصنف بلا وزن سيُحفظ صفرًا تلقائيًا، وفعّل التاريخ فقط لو فيه تاريخ داخل الباركود',
+                    'الكود والوزن إجباريان — حدّد مقطع الوزن ومقطع الكود من الباركود، والتاريخ اختياري',
                     textAlign: TextAlign.right,
                     style: TextStyle(
                         fontFamily: 'Cairo',
@@ -945,6 +935,17 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
                           _openDateOptions),
                     ],
                   ),
+                ] else if (weightType == 'باركود ثابت') ...[
+                  _barcodeInput(),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'امسح الباركود — يُحفظ كما هو ويصبح هو كود الصنف، بدون أي وزن أو تاريخ أو إعدادات.',
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                        fontFamily: 'Cairo',
+                        fontSize: 13,
+                        color: RefColors.hintGrey),
+                  ),
                 ] else ...[
                   RefField(
                       controller: weightC,
@@ -958,23 +959,53 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
     );
   }
 
+  /// حقل الباركود (أرقام فقط) — مشترك بين وضعي "متغير" و"باركود ثابت".
+  Widget _barcodeInput() {
+    return RefField(
+      controller: barcodeC,
+      label: 'أدخل الباركود',
+      textDirection: TextDirection.ltr,
+      focusNode: barcodeFocus,
+      keyboardType: TextInputType.number,
+      formatters: [FilteringTextInputFormatter.digitsOnly],
+      textInputAction: TextInputAction.done,
+      onChanged: (_) => setState(() {}),
+    );
+  }
+
   Widget _radio(String label, String value, Color color) {
     final sel = weightType == value;
     return InkWell(
       onTap: () => setState(() => weightType = value),
-      child: Row(
-        children: [
-          Text(label,
-              style: TextStyle(
-                  fontFamily: 'Cairo', fontSize: 22, fontWeight: FontWeight.w700, color: sel ? color : Colors.black54)),
-          const SizedBox(width: 8),
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: color, width: 2.4)),
-            child: sel ? Center(child: Container(width: 14, height: 14, decoration: BoxDecoration(shape: BoxShape.circle, color: color))) : null,
-          ),
-        ],
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label,
+                style: TextStyle(
+                    fontFamily: 'Cairo',
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                    color: sel ? color : Colors.black54)),
+            const SizedBox(width: 6),
+            Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: color, width: 2.2)),
+              child: sel
+                  ? Center(
+                      child: Container(
+                          width: 12,
+                          height: 12,
+                          decoration:
+                              BoxDecoration(shape: BoxShape.circle, color: color)))
+                  : null,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1002,19 +1033,20 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
                 Text(label, style: const TextStyle(fontFamily: 'Cairo', fontSize: 20, fontWeight: FontWeight.w600)),
               ]),
               const SizedBox(height: 4),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Text(subtitle,
-                    textDirection: TextDirection.ltr,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        fontFamily: 'Cairo',
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black87)),
-              ),
+              if (subtitle.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Text(subtitle,
+                      textDirection: TextDirection.ltr,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          fontFamily: 'Cairo',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black87)),
+                ),
               const SizedBox(height: 2),
               const Text('اضغط للخيارات',
                   style: TextStyle(

@@ -50,8 +50,24 @@ class DatabaseHelper {
         if (oldV < 5) {
           await _applyAlters(d, Schema.v5Alters());
         }
+        if (oldV < 6) {
+          await _migrateAdminPassword(d);
+        }
       },
     );
+  }
+
+  /// v6: كلمة مرور admin الافتراضية بقت '123' — نحدّث الحساب لو لسه
+  /// على الافتراضي القديم 'admin' فقط (لو المستخدم غيّرها لا نلمسها).
+  Future<void> _migrateAdminPassword(DatabaseExecutor d) async {
+    try {
+      await d.update(
+        'users',
+        {'password': '123'},
+        where: 'username=? AND password=?',
+        whereArgs: ['admin', 'admin'],
+      );
+    } catch (_) {}
   }
 
   /// تنظيف مقاطع الوزن الوهمية (v4): مقطع وزن يغطي الباركود كله من
@@ -112,7 +128,7 @@ class DatabaseHelper {
   Future<void> _seedAdmin(DatabaseExecutor d) async {
     final r = await d.query('users', where: 'username=?', whereArgs: ['admin']);
     if (r.isEmpty) {
-      await d.insert('users', {'username': 'admin', 'password': 'admin', 'type': 'مدير'});
+      await d.insert('users', {'username': 'admin', 'password': '123', 'type': 'مدير'});
     }
     for (final j in Schema.jobs) {
       final p = await d.query('user_permissions',

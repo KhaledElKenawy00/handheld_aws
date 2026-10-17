@@ -14,7 +14,7 @@ class LoginScreen extends ConsumerStatefulWidget {
 }
 
 class _LoginState extends ConsumerState<LoginScreen> {
-  final userC = TextEditingController();
+  final userC = TextEditingController(text: 'admin');
   final passC = TextEditingController();
   bool obscure = true;
   bool busy = false;

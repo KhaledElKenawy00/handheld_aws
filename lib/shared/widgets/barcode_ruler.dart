@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/ref_style.dart';
 
-/// مسطرة أرقام الباركود: كل رقم في خانة مستقلة وترقيمه أسفله، والمقطع
+/// مسطرة أرقام الباركود: كل رقم في خانة مستقلة، والمقطع
 /// [start]-[end] مظلّل مع إبراز خانتي الطرفين.
 ///
 /// الأهم للباركود الطويل (50-60 خانة): عند تحريك البداية/النهاية بالأسهم
@@ -32,7 +32,7 @@ class _BarcodeRulerState extends State<BarcodeRuler> {
   final ScrollController _scroll = ScrollController();
 
   // عرض الخانة ثابت ليُحسب موضع التمرير مباشرة: العرض + الهوامش (3).
-  static const double _cellWidth = 34;
+  static const double _cellWidth = 38;
   static const double _step = _cellWidth + 3;
 
   @override
@@ -104,7 +104,6 @@ class _BarcodeRulerState extends State<BarcodeRuler> {
             for (var i = 0; i < barcode.length; i++)
               _cell(
                 barcode[i],
-                i + 1,
                 inRange: !unset && i + 1 >= a && i + 1 <= b,
                 boundary: !unset && (i + 1 == a || i + 1 == b),
                 active: widget.focusPos == i + 1,
@@ -115,12 +114,12 @@ class _BarcodeRulerState extends State<BarcodeRuler> {
     );
   }
 
-  Widget _cell(String ch, int pos,
+  Widget _cell(String ch,
       {required bool inRange, required bool boundary, required bool active}) {
     return Container(
       width: _cellWidth,
       margin: const EdgeInsets.symmetric(horizontal: 1.5),
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
         color: inRange
             ? RefColors.primary.withValues(alpha: boundary ? .42 : .18)
@@ -139,21 +138,12 @@ class _BarcodeRulerState extends State<BarcodeRuler> {
               ]
             : null,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(ch,
-              style: const TextStyle(
-                  fontFamily: 'Cairo',
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800)),
-          Text('$pos',
-              style: TextStyle(
-                  fontFamily: 'Cairo',
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: inRange ? RefColors.primary : RefColors.hintGrey)),
-        ],
+      child: Center(
+        child: Text(ch,
+            style: const TextStyle(
+                fontFamily: 'Cairo',
+                fontSize: 22,
+                fontWeight: FontWeight.w800)),
       ),
     );
   }
