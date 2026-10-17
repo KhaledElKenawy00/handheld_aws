@@ -1112,7 +1112,7 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
             textAlign: TextAlign.center,
             style: const TextStyle(
                 fontFamily: 'Cairo',
-                fontSize: 14,
+                fontSize: 15,
                 fontWeight: FontWeight.w600,
                 height: 1.6)),
         actions: [
@@ -1277,7 +1277,7 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
                   autofocus: true,
                   textAlign: TextAlign.right,
                   style: const TextStyle(
-                      fontFamily: 'Cairo', fontSize: 19),
+                      fontFamily: 'Cairo', fontSize: 22),
                   decoration: InputDecoration(
                     hintText: 'امسح الباركود بالماسح',
                     helperText: lastScanned == null
@@ -1379,7 +1379,7 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                     fontFamily: 'Cairo',
-                    fontSize: 14,
+                    fontSize: 16,
                     fontWeight: FontWeight.w800,
                     color: totalQty >= reqQty
                         ? RefColors.green
@@ -1392,7 +1392,7 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
               child: Text('لا توجد أصناف بعد — امسح للإضافة',
                   style: TextStyle(
                       fontFamily: 'Cairo',
-                      fontSize: 14,
+                      fontSize: 16,
                       color: RefColors.hintGrey)),
             )
           else
@@ -1430,6 +1430,7 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
                   onScanRedirect: _handleCellScan,
                   onEdit: (i) => _editGrouped(gs[i]),
                   onDelete: (i) => _deleteGrouped(gs[i]),
+                  fontScale: 1.3,
                 ),
               );
             }),
@@ -1443,28 +1444,28 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
                   child: Column(children: [
                     Text(_f(firstPrice),
                         style: const TextStyle(
-                            fontFamily: 'Cairo', fontSize: 17, fontWeight: FontWeight.w600, color: RefColors.navy)),
+                            fontFamily: 'Cairo', fontSize: 24, fontWeight: FontWeight.w600, color: RefColors.navy)),
                     const Text('اجمالي السعر',
-                        style: TextStyle(fontFamily: 'Cairo', fontSize: 13, color: Colors.black87)),
+                        style: TextStyle(fontFamily: 'Cairo', fontSize: 17, color: Colors.black87)),
                     Text(_f(totalPrice),
                         style: const TextStyle(
-                            fontFamily: 'Cairo', fontSize: 17, fontWeight: FontWeight.w800, color: RefColors.navy)),
+                            fontFamily: 'Cairo', fontSize: 24, fontWeight: FontWeight.w800, color: RefColors.navy)),
                   ]),
                 ),
                 Expanded(
                   child: Column(children: [
-                      const Text('اجمالي الوزن', style: TextStyle(fontFamily: 'Cairo', fontSize: 13)),
+                      const Text('اجمالي الوزن', style: TextStyle(fontFamily: 'Cairo', fontSize: 17)),
                       Text(_f2(totalWeight),
                         style: const TextStyle(
-                            fontFamily: 'Cairo', fontSize: 17, fontWeight: FontWeight.w800, color: RefColors.navy)),
+                            fontFamily: 'Cairo', fontSize: 24, fontWeight: FontWeight.w800, color: RefColors.navy)),
                   ]),
                 ),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                    const Text('اجمالي الكمية', style: TextStyle(fontFamily: 'Cairo', fontSize: 13)),
+                    const Text('اجمالي الكمية', style: TextStyle(fontFamily: 'Cairo', fontSize: 17)),
                     Text(_f(totalQty),
                         style: const TextStyle(
-                            fontFamily: 'Cairo', fontSize: 17, fontWeight: FontWeight.w800, color: RefColors.navy)),
+                            fontFamily: 'Cairo', fontSize: 24, fontWeight: FontWeight.w800, color: RefColors.navy)),
                   ]),
                 ),
               ],
@@ -1570,7 +1571,7 @@ class _EditLineDialogState extends ConsumerState<_EditLineDialog> {
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
               fontFamily: 'Cairo',
-              fontSize: 17,
+              fontSize: 19,
               fontWeight: FontWeight.w800)),
       content: SingleChildScrollView(
         child: Column(
@@ -1735,13 +1736,13 @@ class _GroupedEditDialogState extends ConsumerState<_GroupedEditDialog> {
             textAlign: TextAlign.center,
             style: TextStyle(
                 fontFamily: 'Cairo',
-                fontSize: 17,
+                fontSize: 18,
                 fontWeight: FontWeight.w800)),
         content: Text('مسحة #${scans.indexOf(s) + 1} — وزن ${_f2(s.weight)}',
             textAlign: TextAlign.center,
             style: const TextStyle(
                 fontFamily: 'Cairo',
-                fontSize: 14,
+                fontSize: 15,
                 fontWeight: FontWeight.w600)),
         actions: [
           TextButton(
@@ -1835,7 +1836,7 @@ class _GroupedEditDialogState extends ConsumerState<_GroupedEditDialog> {
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
               fontFamily: 'Cairo',
-              fontSize: 16,
+              fontSize: 18,
               fontWeight: FontWeight.w800)),
       content: SizedBox(
         width: double.maxFinite,
@@ -1844,10 +1845,10 @@ class _GroupedEditDialogState extends ConsumerState<_GroupedEditDialog> {
                 child: Padding(
                     padding: EdgeInsets.all(16),
                     child: CircularProgressIndicator()))
-            : scans.isEmpty
+                : scans.isEmpty
                 ? const Text('لا توجد مسحات — احذف الصنف من الجدول',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontFamily: 'Cairo', fontSize: 14))
+                    style: TextStyle(fontFamily: 'Cairo', fontSize: 15))
                 : SingleChildScrollView(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -1857,7 +1858,7 @@ class _GroupedEditDialogState extends ConsumerState<_GroupedEditDialog> {
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                                 fontFamily: 'Cairo',
-                                fontSize: 13,
+                                fontSize: 15,
                                 fontWeight: FontWeight.w800)),
                         const SizedBox(height: 8),
                         if (!widget.readOnly) ...[
@@ -1906,14 +1907,14 @@ class _GroupedEditDialogState extends ConsumerState<_GroupedEditDialog> {
                                     Text('مسحة #${i + 1}',
                                         style: const TextStyle(
                                             fontFamily: 'Cairo',
-                                            fontSize: 13,
+                                            fontSize: 15,
                                             fontWeight: FontWeight.w800)),
                                     Text(
                                         'كمية ${_f(s.qty)} | وزن ${_f2(s.weight)} | سعر ${_f(s.price)}',
                                         textDirection: TextDirection.ltr,
                                         style: const TextStyle(
                                             fontFamily: 'Cairo',
-                                            fontSize: 12,
+                                            fontSize: 14,
                                             fontWeight: FontWeight.w600,
                                             color: Colors.black54)),
                                   ],

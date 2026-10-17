@@ -591,6 +591,8 @@ class LinesCellTable extends StatelessWidget {
   final Future<bool> Function(String code)? onScanRedirect;
   final bool showPrice;
   final bool editable;
+  /// معامل تكبير خط الجدول (الصنف/الكمية/الوزن/السعر) — 1.0 = الافتراضي.
+  final double fontScale;
   const LinesCellTable({
     super.key,
     required this.rows,
@@ -602,6 +604,7 @@ class LinesCellTable extends StatelessWidget {
     this.onScanRedirect,
     this.showPrice = true,
     this.editable = true,
+    this.fontScale = 1.0,
   });
 
   String _f(double v) =>
@@ -624,41 +627,41 @@ class LinesCellTable extends StatelessWidget {
           color: AppColors.primaryDark,
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
           child: Row(children: [
-            const Expanded(
+            Expanded(
                 flex: 4,
                 child: Text('الصنف',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                         fontFamily: AppTextStyles.family,
-                        fontSize: 12,
+                        fontSize: 14 * fontScale,
                         fontWeight: FontWeight.w800,
                         color: Colors.white))),
-            const Expanded(
+            Expanded(
                 flex: 2,
                 child: Text('كمية',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                         fontFamily: AppTextStyles.family,
-                        fontSize: 12,
+                        fontSize: 14 * fontScale,
                         fontWeight: FontWeight.w800,
                         color: Colors.white))),
-            const Expanded(
+            Expanded(
                 flex: 2,
                 child: Text('وزن',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                         fontFamily: AppTextStyles.family,
-                        fontSize: 12,
+                        fontSize: 14 * fontScale,
                         fontWeight: FontWeight.w800,
                         color: Colors.white))),
             if (showPrice)
-              const Expanded(
+              Expanded(
                   flex: 2,
                   child: Text('سعر',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                           fontFamily: AppTextStyles.family,
-                          fontSize: 12,
+                          fontSize: 14 * fontScale,
                           fontWeight: FontWeight.w800,
                           color: Colors.white))),
             if (onDelete != null || onEdit != null)
@@ -690,18 +693,18 @@ class LinesCellTable extends StatelessWidget {
                       Text(r.name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontFamily: AppTextStyles.family,
-                              fontSize: 13,
+                              fontSize: 15 * fontScale,
                               fontWeight: FontWeight.w800,
                               color: AppColors.textPrimary)),
                       Text(r.code,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           textDirection: TextDirection.ltr,
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontFamily: AppTextStyles.family,
-                              fontSize: 11,
+                              fontSize: 13 * fontScale,
                               fontWeight: FontWeight.w600,
                               color: AppColors.textSecondary)),
                     ]),
@@ -715,6 +718,7 @@ class LinesCellTable extends StatelessWidget {
                     editable: editable && onQtyChanged != null,
                     onSubmit: (v) => onQtyChanged?.call(i, v),
                     onScanRedirect: onScanRedirect,
+                    fontScale: fontScale,
                   )),
               // خلية الوزن
               Expanded(
@@ -725,6 +729,7 @@ class LinesCellTable extends StatelessWidget {
                     editable: editable && onWeightChanged != null,
                     onSubmit: (v) => onWeightChanged?.call(i, v),
                     onScanRedirect: onScanRedirect,
+                    fontScale: fontScale,
                   )),
               // خلية السعر
               if (showPrice)
@@ -736,6 +741,7 @@ class LinesCellTable extends StatelessWidget {
                       editable: editable && onPriceChanged != null,
                       onSubmit: (v) => onPriceChanged?.call(i, v),
                       onScanRedirect: onScanRedirect,
+                      fontScale: fontScale,
                     )),
               if (onEdit != null)
                 SizedBox(
@@ -776,12 +782,14 @@ class _NumCell extends StatefulWidget {
   final bool editable;
   final ValueChanged<double> onSubmit;
   final Future<bool> Function(String code)? onScanRedirect;
+  final double fontScale;
   const _NumCell(
       {super.key,
       required this.initial,
       required this.editable,
       required this.onSubmit,
-      this.onScanRedirect});
+      this.onScanRedirect,
+      this.fontScale = 1.0});
   @override
   State<_NumCell> createState() => _NumCellState();
 }
@@ -878,9 +886,9 @@ class _NumCellState extends State<_NumCell> {
             textDirection: TextDirection.ltr,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
                 fontFamily: AppTextStyles.family,
-                fontSize: 13,
+                fontSize: 15 * widget.fontScale,
                 fontWeight: FontWeight.w800,
                 color: AppColors.textPrimary)),
       );
@@ -893,9 +901,9 @@ class _NumCellState extends State<_NumCell> {
             const TextInputType.numberWithOptions(decimal: true),
         textAlign: TextAlign.center,
         textDirection: TextDirection.ltr,
-        style: const TextStyle(
+        style: TextStyle(
             fontFamily: AppTextStyles.family,
-            fontSize: 13,
+            fontSize: 15 * widget.fontScale,
             fontWeight: FontWeight.w800,
             color: AppColors.textPrimary),
         decoration: InputDecoration(

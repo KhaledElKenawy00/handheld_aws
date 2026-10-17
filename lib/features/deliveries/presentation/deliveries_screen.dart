@@ -570,28 +570,28 @@ class DeliveryDetailsScreen extends ConsumerWidget {
                         children: [
                           const Text('إذن تسليم',
                               style: TextStyle(
-                                  fontSize: 13,
+                                  fontSize: 15,
                                   fontWeight: FontWeight.w800,
                                   color: Color(0xFFE65100))),
                           const SizedBox(height: 6),
                           // عنوان الكارد: اسم العميل كبير وواضح
                           Text(h.customerName,
                               style: const TextStyle(
-                                  fontSize: 16,
+                                  fontSize: 19,
                                   fontWeight: FontWeight.w800,
                                   height: 1.3)),
                           const SizedBox(height: 6),
                           Text('الرقم: ${h.id}',
                               style: const TextStyle(
-                                  fontSize: 12,
+                                  fontSize: 14,
                                   fontWeight: FontWeight.w700)),
                           Text('التاريخ: ${h.date}',
                               style: const TextStyle(
-                                  fontSize: 12,
+                                  fontSize: 14,
                                   fontWeight: FontWeight.w700)),
                           Text('الكود: ${h.customerCode}',
                               style: const TextStyle(
-                                  fontSize: 11,
+                                  fontSize: 13,
                                   fontWeight: FontWeight.w600,
                                   color: Colors.black54)),
                           const SizedBox(height: 8),
@@ -610,7 +610,7 @@ class DeliveryDetailsScreen extends ConsumerWidget {
                                         'الأصناف: ${h.totalItems}',
                                         textAlign: TextAlign.center,
                                         style: const TextStyle(
-                                            fontSize: 13,
+                                            fontSize: 15,
                                             fontWeight: FontWeight.w800)))),
                             const SizedBox(width: 8),
                             Expanded(
@@ -627,7 +627,7 @@ class DeliveryDetailsScreen extends ConsumerWidget {
                                         'الكمية: ${AppUtils.fmtQty(h.totalQty)}',
                                         textAlign: TextAlign.center,
                                         style: const TextStyle(
-                                            fontSize: 13,
+                                            fontSize: 15,
                                             fontWeight: FontWeight.w800,
                                             color: Color(0xFFE65100))))),
                           ]),
