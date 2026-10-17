@@ -4,7 +4,12 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.media.AudioManager
 import android.os.Build
+import com.honeywell.aidc.AidcManager
+import com.honeywell.aidc.BarcodeFailureEvent
+import com.honeywell.aidc.BarcodeReadEvent
+import com.honeywell.aidc.BarcodeReader
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -29,15 +34,20 @@ import io.flutter.plugin.common.MethodChannel
  *   are translated here into the documented SUNMI scan-control broadcasts so
  *   the built-in 1D/2D head starts scanning without opening any camera.
  *
- * HONEYWELL (no SDK): on listen the app claims the internal scanner via
- *   `com.honeywell.aidc.action.ACTION_CLAIM_SCANNER` (package
- *   `com.intermec.datacollectionservice`) with DPR_DATA_INTENT pointed at
- *   `com.sanad.scanner.HONEYWELL_DATA`, which this receiver forwards to
- *   Flutter. `trigger`/`stop` also send
- *   `com.honeywell.aidc.action.ACTION_CONTROL_SCANNER` (EXTRA_SCAN).
- *   Requires manifest permission `com.honeywell.decode.permission.DECODE`.
+ * HONEYWELL: uses the official Data Collection SDK bundled as
+ *   `app/libs/honeywell.aar` (`AidcManager`/`BarcodeReader`). On listen the
+ *   app creates a `BarcodeReader`, claims the internal scanner and forwards
+ *   `onBarcodeEvent` decodes to Flutter. `pause`/`resume` flip
+ *   `PROPERTY_TRIGGER_CONTROL_MODE` and the notification (beep/vibrate)
+ *   properties directly on the claimed reader — the only reliable way to
+ *   silence the beep on EDA57 firmware. The Data Collection Intent API
+ *   broadcasts are kept as a fallback for devices where `AidcManager`
+ *   fails to connect. Requires manifest permission
+ *   `com.honeywell.decode.permission.DECODE`.
  */
-class MainActivity : FlutterActivity() {
+class MainActivity : FlutterActivity(),
+    AidcManager.CreatedCallback,
+    BarcodeReader.BarcodeListener {
     companion object {
         const val STREAM = "com.sanad.scanner/stream"
         const val CONTROL = "com.sanad.scanner/control"
@@ -53,6 +63,11 @@ class MainActivity : FlutterActivity() {
         const val ACTION_STOP = "com.sunmi.scanner.ACTION_STOP_SCAN"
         const val ACTION_TRIG = "com.sunmi.scanner.ACTION_TRIG_SCAN"
         const val ACTION_ENABLE = "com.sunmi.scanner.ACTION_ENABLE_SCAN"
+        // Official SUNMI broadcast to enable/disable the PHYSICAL trigger
+        // button at the firmware level (Boolean extra `enable`). Disabling it
+        // is the only reliable way to stop the hardware scanning (and its
+        // beep) while a message/dialog is on screen.
+        const val ACTION_TRIGGER_CONTROL = "com.sunmi.scanner.ACTION_TRIGGER_CONTROL"
 
         // ── Honeywell (Data Collection Intent API, no SDK needed) ──
         // Our private data-intent action: the app claims the scanner and
@@ -69,6 +84,11 @@ class MainActivity : FlutterActivity() {
 
     private var events: EventChannel.EventSink? = null
     private var receiver: BroadcastReceiver? = null
+    // ── Honeywell SDK state ──
+    private var aidcManager: AidcManager? = null
+    private var barcodeReader: BarcodeReader? = null
+    private var hwReady = false
+    private var hwPaused = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -78,10 +98,10 @@ class MainActivity : FlutterActivity() {
                 override fun onListen(args: Any?, sink: EventChannel.EventSink) {
                     events = sink
                     registerSunmiReceiver()
-                    // On Honeywell devices this makes the DataCollection
-                    // service deliver every decode to HW_DATA_ACTION below,
-                    // so the physical scan button works with zero settings.
-                    claimHoneywell()
+                    // On Honeywell devices this attaches the SDK to the
+                    // DataCollection service so the physical scan button
+                    // delivers decodes straight to onBarcodeEvent().
+                    initHoneywellSdk()
                 }
                 override fun onCancel(args: Any?) {
                     events = null
@@ -97,14 +117,31 @@ class MainActivity : FlutterActivity() {
                         sendScanBroadcast(ACTION_ENABLE)
                         sendScanBroadcast(ACTION_START)
                         sendScanBroadcast(ACTION_TRIG)
-                        // Honeywell: (re)claim then start scanning.
-                        claimHoneywell()
-                        honeywellScan(true)
+                        // Honeywell: make sure we own the scanner, then scan.
+                        if (!hwReady) initHoneywellSdk()
+                        setHoneywellMuted(false)
+                        try { barcodeReader?.softwareTrigger(true) } catch (_: Exception) {}
                         result.success(true)
                     }
                     "stop" -> {
                         sendScanBroadcast(ACTION_STOP)
-                        honeywellScan(false)
+                        try { barcodeReader?.softwareTrigger(false) } catch (_: Exception) {}
+                        result.success(true)
+                    }
+                    "pause" -> {
+                        // Mute the scanner (no beep) + disable its physical
+                        // trigger while a message is on screen; hardware
+                        // vibrates instead so the user still feels feedback.
+                        setTriggerEnabled(false)
+                        sendScanBroadcast(ACTION_STOP)
+                        setHoneywellMuted(true)
+                        setDeviceMute(true)
+                        result.success(true)
+                    }
+                    "resume" -> {
+                        setTriggerEnabled(true)
+                        setHoneywellMuted(false)
+                        setDeviceMute(false)
                         result.success(true)
                     }
                     else -> result.notImplemented()
@@ -117,34 +154,166 @@ class MainActivity : FlutterActivity() {
     }
 
     /**
-     * Honeywell: claim the internal scanner on the DEFAULT profile and ask
-     * the DataCollection service to deliver decodes to [HW_DATA_ACTION].
-     * setPackage() targets the Honeywell service, so this is a harmless
-     * no-op on non-Honeywell devices. Only data-intent properties are
-     * overridden — wedge/keyboard output settings are left untouched.
+     * SUNMI: enable/disable the physical trigger button via the official
+     * `ACTION_TRIGGER_CONTROL` broadcast (Boolean extra `enable`). This is
+     * what actually stops the scanner hardware (and its beep) — a plain
+     * ACTION_STOP_SCAN only ends the current decode.
      */
-    private fun claimHoneywell() {
+    private fun setTriggerEnabled(enabled: Boolean) {
         try {
-            val props = android.os.Bundle().apply {
-                putBoolean("DPR_DATA_INTENT", true)
-                putString("DPR_DATA_INTENT_ACTION", HW_DATA_ACTION)
-            }
-            sendBroadcast(Intent(HW_CLAIM).apply {
-                setPackage(HW_PKG)
-                putExtra(HW_EXTRA_SCANNER, "dcs.scanner.imager")
-                putExtra(HW_EXTRA_PROFILE, "DEFAULT")
-                putExtra(HW_EXTRA_PROPS, props)
+            sendBroadcast(Intent(ACTION_TRIGGER_CONTROL).apply {
+                putExtra("enable", enabled)
             })
         } catch (_: Exception) {}
     }
 
-    /** Honeywell: start/stop the scanner programmatically. */
-    private fun honeywellScan(enable: Boolean) {
+    /**
+     * Honeywell: attach to the Data Collection service through the official
+     * SDK. The callback [onCreated] gives us an [AidcManager] we use to create
+     * and claim a [BarcodeReader]. Everything decodes to [onBarcodeEvent].
+     * Safe to call repeatedly — it no-ops once attached.
+     */
+    private fun initHoneywellSdk() {
+        if (hwReady || aidcManager != null) return
         try {
-            sendBroadcast(Intent(HW_CONTROL).apply {
-                setPackage(HW_PKG)
-                putExtra(HW_EXTRA_SCAN, enable)
-            })
+            AidcManager.create(this, this)
+        } catch (_: Exception) {
+            // SDK unavailable (non-Honeywell device): fall back to the
+            // Data Collection Intent API broadcasts.
+            claimHoneywellFallback(hwPaused)
+        }
+    }
+
+    override fun onCreated(mgr: AidcManager) {
+        aidcManager = mgr
+        try {
+            val reader = mgr.createBarcodeReader()
+            barcodeReader = reader
+            reader.addBarcodeListener(this)
+            applyHoneywellProps(reader, hwPaused)
+            reader.claim()
+            hwReady = true
+        } catch (_: Exception) {
+            // Claim failed — fall back to the Intent API path.
+            claimHoneywellFallback(hwPaused)
+        }
+    }
+
+    /**
+     * Push the trigger + notification (beep/vibrate) settings straight onto
+     * the claimed [BarcodeReader]. [muted] = true is used while a message/alert
+     * is on screen: it disables the physical trigger, silences the good/bad
+     * read beeps and turns on the hardware vibrator so pressing the trigger
+     * gives haptic feedback instead of a beep. All property names are
+     * com.honeywell.aidc.BarcodeReader constants.
+     */
+    private fun applyHoneywellProps(reader: BarcodeReader, muted: Boolean) {
+        try {
+            reader.setProperty(
+                BarcodeReader.PROPERTY_TRIGGER_CONTROL_MODE,
+                if (muted) BarcodeReader.TRIGGER_CONTROL_MODE_DISABLE
+                else BarcodeReader.TRIGGER_CONTROL_MODE_AUTO_CONTROL,
+            )
+        } catch (_: Exception) {}
+        try {
+            reader.setProperty(BarcodeReader.PROPERTY_NOTIFICATION_GOOD_READ_ENABLED, !muted)
+        } catch (_: Exception) {}
+        try {
+            reader.setProperty(BarcodeReader.PROPERTY_NOTIFICATION_BAD_READ_ENABLED, !muted)
+        } catch (_: Exception) {}
+        try {
+            reader.setProperty(BarcodeReader.PROPERTY_NOTIFICATION_VIBRATE_ENABLED, muted)
+        } catch (_: Exception) {}
+    }
+
+    /** Honeywell: mute/unmute via the SDK; fall back to the Intent API. */
+    private fun setHoneywellMuted(muted: Boolean) {
+        hwPaused = muted
+        val reader = barcodeReader
+        if (reader != null) {
+            applyHoneywellProps(reader, muted)
+            if (muted) {
+                try { reader.softwareTrigger(false) } catch (_: Exception) {}
+            }
+        } else {
+            claimHoneywellFallback(muted)
+        }
+    }
+
+    override fun onBarcodeEvent(event: BarcodeReadEvent) {
+        val code = event.barcodeData
+        if (!code.isNullOrEmpty()) {
+            runOnUiThread { try { events?.success(code) } catch (_: Exception) {} }
+        }
+    }
+
+    override fun onFailureEvent(event: BarcodeFailureEvent) {
+        // Nothing to forward — the Flutter side only consumes decoded strings.
+    }
+
+    /**
+     * Fallback (Data Collection Intent API, no SDK): claim the internal
+     * scanner and ask the DataCollection service to deliver decodes to
+     * [HW_DATA_ACTION]. Used only when the SDK cannot attach. [muted] mirrors
+     * [applyHoneywellProps]. The intent is sent BOTH explicitly (setPackage →
+     * DataCollection service) and implicitly (bare action). Harmless on
+     * non-Honeywell devices.
+     */
+    private fun claimHoneywellFallback(muted: Boolean = false) {
+        val triggerMode = if (muted) "disable" else "enable"
+        try {
+            val trigProps = android.os.Bundle().apply {
+                putString("TRIG_CONTROL_MODE", triggerMode)
+            }
+            sendBroadcast(Intent(HW_CLAIM).putExtra(HW_EXTRA_PROPS, trigProps))
+        } catch (_: Exception) {}
+        val props = android.os.Bundle().apply {
+            putBoolean("DPR_DATA_INTENT", true)
+            putString("DPR_DATA_INTENT_ACTION", HW_DATA_ACTION)
+            putString("TRIG_CONTROL_MODE", triggerMode)
+            putBoolean("NTF_GOOD_READ_ENABLED", !muted)
+            putBoolean("NTF_BAD_READ_ENABLED", !muted)
+            putBoolean("NTF_VIBRATE_ENABLED", muted)
+        }
+        for (pkg in arrayOf<String?>(HW_PKG, null)) {
+            try {
+                sendBroadcast(Intent(HW_CLAIM).apply {
+                    pkg?.let { setPackage(it) }
+                    putExtra(HW_EXTRA_SCANNER, "dcs.scanner.imager")
+                    putExtra(HW_EXTRA_PROFILE, "DEFAULT")
+                    putExtra(HW_EXTRA_PROPS, props)
+                })
+            } catch (_: Exception) {}
+        }
+        // Start/stop scanning through the same Intent API.
+        for (pkg in arrayOf<String?>(HW_PKG, null)) {
+            try {
+                sendBroadcast(Intent(HW_CONTROL).apply {
+                    pkg?.let { setPackage(it) }
+                    putExtra(HW_EXTRA_SCAN, !muted)
+                })
+            } catch (_: Exception) {}
+        }
+    }
+
+    /**
+     * Last-resort mute of the device audio streams while a message is shown.
+     * On some Honeywell firmwares the scanner beep is routed through the
+     * Android notification/system streams, so muting them silences it even
+     * when the scanner profile properties are ignored. ADJUST_UNMUTE restores
+     * the previous volume, so nothing is permanently changed.
+     */
+    private fun setDeviceMute(muted: Boolean) {
+        try {
+            val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val dir = if (muted) AudioManager.ADJUST_MUTE else AudioManager.ADJUST_UNMUTE
+            for (stream in intArrayOf(
+                AudioManager.STREAM_SYSTEM,
+                AudioManager.STREAM_NOTIFICATION,
+                AudioManager.STREAM_MUSIC,
+            )) {
+                try { am.adjustStreamVolume(stream, dir, 0) } catch (_: Exception) {}
+            }
         } catch (_: Exception) {}
     }
 
@@ -257,6 +426,11 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         unregisterSunmiReceiver()
+        try { barcodeReader?.release() } catch (_: Exception) {}
+        try { aidcManager?.close() } catch (_: Exception) {}
+        barcodeReader = null
+        aidcManager = null
+        hwReady = false
         super.onDestroy()
     }
 }

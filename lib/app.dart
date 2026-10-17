@@ -5,13 +5,15 @@ import 'core/theme/ref_style.dart';
 import 'features/license/boot_gate.dart';
 
 class SanadApp extends StatelessWidget {
-  const SanadApp({super.key});
+  final List<NavigatorObserver> navigatorObservers;
+  const SanadApp({super.key, this.navigatorObservers = const []});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'SANAD — سند',
       debugShowCheckedModeBanner: false,
+      navigatorObservers: navigatorObservers,
       theme: RefTheme.light(),
       locale: const Locale('ar'),
       supportedLocales: const [Locale('ar'), Locale('en')],

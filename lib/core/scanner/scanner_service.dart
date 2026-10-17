@@ -15,6 +15,10 @@ abstract class ScannerService {
   Future<void> stopScan();
 
   Future<void> dispose();
+
+  /// إيقاف/استئناف استقبال المسحات مؤقتًا — يُستخدم لإسكات الماسح وإيقافه
+  /// طالما فيه رسالة/حوار مفتوح أمام المستخدم (بدل ما يزحم مسحات وصوت).
+  void setPaused(bool paused) {}
 }
 
 /// إعدادات Scanner من Settings

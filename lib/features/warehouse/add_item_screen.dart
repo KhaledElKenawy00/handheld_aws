@@ -128,18 +128,37 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
   late final _ScanFieldGuard _barcodeGuard;
 
   void _initScanGuards() {
-    _codeGuard = _ScanFieldGuard(codeC, onBurst: (burst, base) {
-      _codeGuard.setText(base);
-      _consumeScan(burst, 'الرمز يُكتب يدويًا — نُقلت المسحة لحقل الباركود');
-    });
-    _nameGuard = _ScanFieldGuard(nameC, onBurst: (burst, base) {
-      _nameGuard.setText(base);
-      _consumeScan(burst, 'الاسم يُكتب يدويًا — نُقلت المسحة لحقل الباركود');
-    });
-    _barcodeGuard = _ScanFieldGuard(barcodeC, onBurst: (burst, base) {
-      // مسحة جديدة فوق باركود قديم → القديم يُمسح والجديد فقط يُحفظ.
-      _consumeScan(burst);
-    });
+    _codeGuard = _ScanFieldGuard(
+      codeC,
+      idleResetMs: 250,
+      maxMsPerChar: 160,
+      onBurst: (burst, base) {
+        _codeGuard.setText(base);
+        _consumeScan(burst, 'الرمز يُكتب يدويًا — نُقلت المسحة لحقل الباركود');
+      },
+    );
+    _nameGuard = _ScanFieldGuard(
+      nameC,
+      idleResetMs: 250,
+      maxMsPerChar: 160,
+      onBurst: (burst, base) {
+        _nameGuard.setText(base);
+        _consumeScan(burst, 'الاسم يُكتب يدويًا — نُقلت المسحة لحقل الباركود');
+      },
+    );
+    // حقل الباركود: أي قراءة جديدة تستبدل القديمة بالكامل، ويتعامل مع
+    // الماسحات اللي بتستبدل النص المحدد كله (freshOnReplace) أو بتضيف
+    // في الآخر — وفي الحالتين آخر قراءة هي اللي تتحط.
+    _barcodeGuard = _ScanFieldGuard(
+      barcodeC,
+      idleResetMs: 300,
+      maxMsPerChar: 200,
+      freshOnReplace: true,
+      onBurst: (burst, base) {
+        // مسحة جديدة فوق باركود قديم → القديم يُمسح والجديد فقط يُحفظ.
+        _consumeScan(burst);
+      },
+    );
   }
 
   /// استقبال مسحة في حقل الباركود: تضبط المقاطع وتستبدل المحتوى السابق
@@ -1125,12 +1144,21 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
 
 /// حراسة حقل نصي من مسحات الماسح الضالة (وضع wedge يكتب في الحقل المركّز):
 /// يراقب التغييرات، ولو رصد دفعة سريعة بمواصفات باركود (طول ≥ [minBurst]
-/// بمتوسط <50ms للمحرف) يستدعي [onBurst] بالمسحة وحدها وبالنص الذي كان
-/// قبلها. الكتابة اليدوية البطيئة أو الحذف لا يتأثران.
+/// بمتوسط <[maxMsPerChar] مللي للمحرف) يستدعي [onBurst] بالمسحة وحدها
+/// وبالنص الذي كان قبلها. الكتابة اليدوية البطيئة أو الحذف لا يتأثران.
+///
+/// - [idleResetMs]: فجوة بهذا القدر تعني بداية إدخال جديد، فيُعتبر النص
+///   السابق هو نقطة الأساس (يُرفع ليستوعب الماسحات الأبطأ ويتجاهل التهنيج).
+/// - [freshOnReplace]: لو غيّر الماسح النص كله/حدد الكل وكت ب فوقه، تُعالج
+///   المحتوى الجديد كقراءة كاملة (لا يُلحق بالقديم).
 class _ScanFieldGuard {
   final TextEditingController controller;
   final void Function(String burst, String base) onBurst;
+  final int idleResetMs;
+  final int maxMsPerChar;
+  final bool freshOnReplace;
 
+  /// أقل طول يُعتبر مسحة ماسح (مش كتابة يدوية).
   static const int minBurst = 4;
 
   String _prev;
@@ -1140,8 +1168,13 @@ class _ScanFieldGuard {
   Timer? _settle;
   bool _suppress = false;
 
-  _ScanFieldGuard(this.controller, {required this.onBurst})
-      : _prev = controller.text,
+  _ScanFieldGuard(
+    this.controller, {
+    required this.onBurst,
+    this.idleResetMs = 120,
+    this.maxMsPerChar = 50,
+    this.freshOnReplace = false,
+  })  : _prev = controller.text,
         _base = controller.text {
     controller.addListener(_onChanged);
   }
@@ -1170,7 +1203,7 @@ class _ScanFieldGuard {
     final grew = text.length - _base.length;
     if (grew < minBurst) return false;
     final ms = _lastChange.difference(_burstStart).inMilliseconds;
-    return ms < grew * 50;
+    return ms < grew * maxMsPerChar;
   }
 
   void _onChanged() {
@@ -1180,17 +1213,20 @@ class _ScanFieldGuard {
     }
     final t = controller.text;
     final now = DateTime.now();
-    // حذف/تعديل وسط النص — إعادة ضبط القاعدة وإلغاء أي مسحة معلقة.
+    // حذف أو استبدال (غير إلحاق في الآخر) — قاعدة جديدة وإلغاء أي مسحة معلقة.
+    // في الحقل اللي بيتعامل مع الاستبدال (freshOnReplace): الماسح اللي
+    // بيستبدل النص المحدد كله نعتبر اللي هيتكتب هو القراءة كاملة، فالقاعدة
+    // فاضية عشان المسحة تلتقط من أول حرف.
     if (t.length < _prev.length || !t.startsWith(_prev)) {
       _prev = t;
-      _base = t;
+      _base = freshOnReplace ? '' : t;
       _burstStart = now;
       _lastChange = now;
       _settle?.cancel();
       return;
     }
     // فجوة زمنية = قد تبدأ مسحة جديدة → الأساس هو النص قبل هذا التغيير.
-    if (now.difference(_lastChange).inMilliseconds > 120) {
+    if (now.difference(_lastChange).inMilliseconds > idleResetMs) {
       _base = _prev;
       _burstStart = now;
     }

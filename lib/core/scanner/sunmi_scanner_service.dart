@@ -32,8 +32,28 @@ class SunmiScannerService implements ScannerService {
   DateTime _lastAt = DateTime.fromMillisecondsSinceEpoch(0);
   int _debounceMs = 400;
   bool _ready = false;
+  bool _paused = false;
+  DateTime _lastPausedBuzzAt = DateTime.fromMillisecondsSinceEpoch(0);
 
   void configure(ScannerConfig c) => _debounceMs = c.debounceMs;
+
+  /// إيقاف/استئناف استقبال المسح. عند الإيقاف نعطّل زر الماسح الفيزيائي
+  /// في الفرموير نفسه (SUNMI ACTION_TRIGGER_CONTROL) — بدون كده الزر
+  /// يفضل شغال ويصدر صوت/قراءة أثناء الرسالة المفتوحة.
+  @override
+  void setPaused(bool paused) {
+    _paused = paused;
+    _controlCh.invokeMethod(paused ? 'pause' : 'resume').catchError((Object e) {
+      debugPrint('setPaused native failed: $e');
+      // لو القناة مش موجودة، منوقفش المحاولة: على الأقل نوقف القراءة.
+      if (paused) {
+        try {
+          stopScan();
+        } catch (_) {}
+      }
+      return null;
+    });
+  }
 
   bool _debounced(String code) {
     final now = DateTime.now();
@@ -49,6 +69,22 @@ class SunmiScannerService implements ScannerService {
   void _emit(String raw) {
     final code = raw.trim();
     if (code.isEmpty) return;
+    // مسحة وصلت أثناء رسالة/حوار مفتوح: نتجاهلها، نوقف الماسح والصوت،
+    // ونستبدل صوت الماسح باهتزاز من الجهاز عشان اليوزر يحس إن فيه رسالة.
+    if (_paused) {
+      // وصلت مسحة رغم الإيقاف (الترّيجر كان لسه مفعّل) — نعيد تعطيله فورًا.
+      try {
+        _controlCh.invokeMethod('pause');
+      } catch (_) {}
+      final now = DateTime.now();
+      if (now.difference(_lastPausedBuzzAt).inMilliseconds > 600) {
+        _lastPausedBuzzAt = now;
+        try {
+          HapticFeedback.heavyImpact();
+        } catch (_) {}
+      }
+      return;
+    }
     if (_debounced(code)) return;
     if (!_controller.isClosed) _controller.add(code);
   }
@@ -85,6 +121,8 @@ class SunmiScannerService implements ScannerService {
 
   @override
   Future<void> triggerScan() async {
+    // فيه رسالة/حوار مفتوح — لا تبدأ مسحًا جديدًا (تفادي الصوت والزحمة).
+    if (_paused) return;
     try {
       await _controlCh.invokeMethod('trigger');
     } on MissingPluginException {
@@ -106,6 +144,13 @@ class SunmiScannerService implements ScannerService {
 
   @override
   Future<void> dispose() async {
+    // لا نترك زر الماسح معطّلًا في الفرموير لو الحوار كان مفتوحًا وقت الإغلاق.
+    if (_paused) {
+      try {
+        await _controlCh.invokeMethod('resume');
+      } catch (_) {}
+      _paused = false;
+    }
     await _nativeSub?.cancel();
     await _controller.close();
     _ready = false;

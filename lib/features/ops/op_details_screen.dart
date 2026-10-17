@@ -132,6 +132,9 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
   // قبل الإضافة حتى لا تدخل كرتونة صنف آخر بالغلط.
   String? _ackedCode;
   bool _confirmingNewItem = false;
+  // رسالة تنبيه مفتوحة (حسنًا) — نتجاهل أي مسحة لحد ما تتقفل،
+  // ونتوقف عن معالجة الصوت/الماسح (مع الـ ScannerRouteObserver).
+  bool _modalOpen = false;
   bool get _isReceiptDelivery =>
       widget.kind == OpKind.receipt || widget.kind == OpKind.delivery;
 
@@ -541,9 +544,33 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
   /// حتى لا تضيع المسحات التالية (وضع wedge يحتاج حقلًا مركزًا).
   /// [backToBarcode]=false يبقي التركيز حيث هو (مثل حقل السعر المطلوب).
   Future<void> _scanAlert(String msg, {bool backToBarcode = true}) async {
+    // أوقف الماسح مؤقتًا أثناء عرض الرسالة — نعطّل زر المسح الفيزيائي في
+    // الفيرموير نفسه (SUNMI/Honeywell) فما يقرأ وما يزمّر طالما الرسالة
+    // ظاهرة، ولو المستخدم كمّل مسح تتجاهل المسحة كمان.
+    final scanner = ref.read(scannerServiceProvider);
+    _modalOpen = true;
+    scanner.setPaused(true);
+    // بدل صوت الماسح: اهتزاز مزدوج قوي يوصل للمستخدم إن فيه مشكلة،
+    // حتى لو ماسح الجهاز مكتوم أثناء الرسالة.
     try {
-      await refError(context, msg);
+      HapticFeedback.heavyImpact();
     } catch (_) {}
+    Future.delayed(const Duration(milliseconds: 150), () {
+      try {
+        HapticFeedback.heavyImpact();
+      } catch (_) {}
+    });
+    try {
+      try {
+        await scanner.stopScan();
+      } catch (_) {}
+      if (!mounted) return;
+      await refError(context, msg);
+    } catch (_) {
+    } finally {
+      _modalOpen = false;
+      scanner.setPaused(false);
+    }
     if (mounted && backToBarcode) {
       try {
         barcodeFocus.requestFocus();
@@ -618,7 +645,16 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
       final code = BarcodeParser.clean(raw);
       if (code.isEmpty || !mounted) return;
       // حوار "صنف جديد" مفتوح — تجاهل أي مسحة حتى لا تُضاف بدون تأكيد.
-      if (_confirmingNewItem) return;
+      if (_confirmingNewItem) {
+        HapticFeedback.heavyImpact();
+        return;
+      }
+      // رسالة تنبيه مفتوحة (حسنًا) — تجاهل أي مسحة لحد ما المستخدم يقفلها،
+      // واهتز بالجهاز بدل صوت الماسح عشان يحس إن فيه رسالة مفتوحة.
+      if (_modalOpen) {
+        HapticFeedback.heavyImpact();
+        return;
+      }
       // منع المعالجة المكررة لنفس المسحة الواحدة عند وصولها من مسارين
       // (بث + كتابة + Enter + تلقائي) معًا — النافذة 400ms فقط، وأي ضغطة
       // جديدة بعدها لنفس الصنف تُعالج وتُسجل (لا تُلتهم).
@@ -821,13 +857,8 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
       setState(() {
         lastScanned = code;
       });
-      // رسالة تشخيصية توضح السبب والحل بدل العمومية.
-      String msg = 'الصنف غير موجود: $code';
-      try {
-        final templates = await ref.read(productCodeRepoProvider).all();
-        if (mounted) msg = BarcodeResolver.diagnoseNotFound(code, templates);
-      } catch (_) {}
-      if (mounted) _scanAlert(msg);
+      // رسالة واضحة ومختصرة كما طُلب: "الصنف غير موجود".
+      if (mounted) _scanAlert('الصنف غير موجود');
       return;
     }
     setState(() {

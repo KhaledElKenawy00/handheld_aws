@@ -6,6 +6,7 @@ import 'app.dart';
 import 'core/config/supabase_config.dart';
 import 'core/database/database_helper.dart';
 import 'core/scanner/scanner_providers.dart';
+import 'core/scanner/scanner_route_observer.dart';
 import 'core/scanner/scanner_service.dart';
 import 'core/scanner/sunmi_scanner_service.dart';
 
@@ -53,7 +54,9 @@ Future<void> main() async {
   runApp(
     ProviderScope(
       overrides: [scannerServiceProvider.overrideWithValue(scanner)],
-      child: const SanadApp(),
+      child: SanadApp(
+        navigatorObservers: [ScannerRouteObserver(scanner)],
+      ),
     ),
   );
 }

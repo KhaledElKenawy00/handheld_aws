@@ -5,6 +5,15 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Honeywell Data Collection SDK (honeywell.aar) — local lib, no Maven needed.
+repositories {
+    flatDir { dirs("libs") }
+}
+
+dependencies {
+    implementation(mapOf("name" to "honeywell", "ext" to "aar"))
+}
+
 android {
     namespace = "com.example.sanad"
     compileSdk = flutter.compileSdkVersion
