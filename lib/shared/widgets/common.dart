@@ -970,6 +970,8 @@ class ScansBreakdownDialog extends StatefulWidget {
   final List<DocLine> scans;
   final VoidCallback onChanged;
   final void Function(DocLine scan) onDelete;
+  /// false = عرض فقط مع حذف (بدون تعديل وزن/سعر) — يستخدمه إذن التسليم.
+  final bool editing;
   const ScansBreakdownDialog({
     super.key,
     required this.productName,
@@ -977,6 +979,7 @@ class ScansBreakdownDialog extends StatefulWidget {
     required this.scans,
     required this.onChanged,
     required this.onDelete,
+    this.editing = true,
   });
   @override
   State<ScansBreakdownDialog> createState() => _ScansBreakdownDialogState();
@@ -1039,33 +1042,35 @@ class _ScansBreakdownDialogState extends State<ScansBreakdownDialog> {
                             fontSize: 13,
                             fontWeight: FontWeight.w800)),
                     const SizedBox(height: 8),
-                    Row(children: [
-                      Expanded(
-                        child: TextField(
-                          controller: priceAllC,
-                          keyboardType:
-                              const TextInputType.numberWithOptions(
-                                  decimal: true),
-                          textDirection: TextDirection.ltr,
-                          decoration: const InputDecoration(
-                              labelText: 'سعر موحد للكل', isDense: true),
+                    if (widget.editing) ...[
+                      Row(children: [
+                        Expanded(
+                          child: TextField(
+                            controller: priceAllC,
+                            keyboardType:
+                                const TextInputType.numberWithOptions(
+                                    decimal: true),
+                            textDirection: TextDirection.ltr,
+                            decoration: const InputDecoration(
+                                labelText: 'سعر موحد للكل', isDense: true),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      FilledButton.tonal(
-                          onPressed: () {
-                            final np =
-                                AppUtils.parseNum(priceAllC.text);
-                            if (np <= 0) return;
-                            for (final s in scans) {
-                              s.price = np;
-                            }
-                            priceAllC.clear();
-                            _onScanChanged();
-                          },
-                          child: const Text('توحيد')),
-                    ]),
-                    const SizedBox(height: 8),
+                        const SizedBox(width: 8),
+                        FilledButton.tonal(
+                            onPressed: () {
+                              final np =
+                                  AppUtils.parseNum(priceAllC.text);
+                              if (np <= 0) return;
+                              for (final s in scans) {
+                                s.price = np;
+                              }
+                              priceAllC.clear();
+                              _onScanChanged();
+                            },
+                            child: const Text('توحيد')),
+                      ]),
+                      const SizedBox(height: 8),
+                    ],
                     ...scans.asMap().entries.map((e) {
                       final i = e.key;
                       final s = e.value;
@@ -1108,33 +1113,66 @@ class _ScansBreakdownDialogState extends State<ScansBreakdownDialog> {
                           ),
                           SizedBox(
                             width: 84,
-                            child: TextFormField(
-                              key: ValueKey(
-                                  'w-${widget.productCode}-$i-${s.weight}'),
-                              initialValue: _f2(s.weight),
-                              keyboardType: const TextInputType
-                                  .numberWithOptions(decimal: true),
-                              textAlign: TextAlign.center,
-                              textDirection: TextDirection.ltr,
-                              style: const TextStyle(
-                                  fontFamily: AppTextStyles.family,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w800),
-                              decoration: const InputDecoration(
-                                  labelText: 'الوزن',
-                                  isDense: true,
-                                  contentPadding:
-                                      EdgeInsets.symmetric(
-                                          horizontal: 4,
-                                          vertical: 8)),
-                              onFieldSubmitted: (v) {
-                                final n =
-                                    AppUtils.parseNum(v);
-                                if (n < 0) return;
-                                s.weight = n;
-                                _onScanChanged();
-                              },
-                            ),
+                            child: widget.editing
+                                ? TextFormField(
+                                    key: ValueKey(
+                                        'w-${widget.productCode}-$i-${s.weight}'),
+                                    initialValue: _f2(s.weight),
+                                    keyboardType: const TextInputType
+                                        .numberWithOptions(decimal: true),
+                                    textAlign: TextAlign.center,
+                                    textDirection: TextDirection.ltr,
+                                    style: const TextStyle(
+                                        fontFamily: AppTextStyles.family,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w800),
+                                    decoration: const InputDecoration(
+                                        labelText: 'الوزن',
+                                        isDense: true,
+                                        contentPadding:
+                                            EdgeInsets.symmetric(
+                                                horizontal: 4,
+                                                vertical: 8)),
+                                    onFieldSubmitted: (v) {
+                                      final n = AppUtils.parseNum(v);
+                                      if (n < 0) return;
+                                      s.weight = n;
+                                      _onScanChanged();
+                                    },
+                                  )
+                                : Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 4, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF1F4F1),
+                                      borderRadius:
+                                          BorderRadius.circular(8),
+                                      border: Border.all(
+                                          color: const Color(0xFFD9E2E3)),
+                                    ),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Text('الوزن',
+                                            style: TextStyle(
+                                                fontFamily:
+                                                    AppTextStyles.family,
+                                                fontSize: 10,
+                                                fontWeight:
+                                                    FontWeight.w700,
+                                                color: Colors.black54)),
+                                        Text(_f2(s.weight),
+                                            textDirection:
+                                                TextDirection.ltr,
+                                            style: const TextStyle(
+                                                fontFamily:
+                                                    AppTextStyles.family,
+                                                fontSize: 13,
+                                                fontWeight:
+                                                    FontWeight.w800)),
+                                      ],
+                                    ),
+                                  ),
                           ),
                           SizedBox(
                             width: 36,

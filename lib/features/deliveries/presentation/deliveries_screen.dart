@@ -254,32 +254,7 @@ class _CD extends ConsumerState<CreateDeliveryScreen> {
   /// صفوف مدمجة للعرض: نفس الصنف بكل مسحاته في صف واحد.
   List<MergedDocLine> get _grouped => mergeDocLines(lines);
 
-  /// تعديل سريع لخلية في الصف المدمج: السعر يُطبق على كل المسحات،
-  /// وفرق الكمية/الوزن يُحمّل على آخر مسحة.
-  void _quickUpdateGrouped(
-      List<MergedDocLine> gs, int i, double v, String field) {
-    if (i < 0 || i >= gs.length) return;
-    final g = gs[i];
-    if (g.scans.isEmpty) return;
-    setState(() {
-      if (field == 'price') {
-        for (final s in g.scans) {
-          s.price = v < 0 ? 0 : v;
-        }
-      } else if (field == 'qty') {
-        final nv = v <= 0 ? 1 : v;
-        final last = g.scans.last;
-        last.quantity += nv - g.qty;
-        if (last.quantity <= 0) last.quantity = 1;
-      } else {
-        final last = g.scans.last;
-        last.weight += v - g.weight;
-        if (last.weight < 0) last.weight = 0;
-      }
-    });
-  }
-
-  /// حوار التعديل: كل مسحة في صف مستقل بوزنها.
+  /// حوار التعديل: كل مسحة في صف مستقل بوزنها — عرض وحذف فقط في إذن التسليم.
   Future<void> _editGrouped(MergedDocLine g) async {
     await showDialog(
       context: context,
@@ -287,6 +262,7 @@ class _CD extends ConsumerState<CreateDeliveryScreen> {
         productName: g.name,
         productCode: g.code,
         scans: g.scans,
+        editing: false,
         onChanged: () => setState(() {}),
         onDelete: (s) => setState(() => lines.remove(s)),
       ),
@@ -451,14 +427,10 @@ class _CD extends ConsumerState<CreateDeliveryScreen> {
                       weight: g.weight,
                       price: g.price),
               ],
-              // نفس الصنف مدمج في صف واحد — والتعديل يعرض كل مسحة في صف.
-              // أي مسحة تضل لخلية رقمية تُعالج كمسحة بدل حفظها كرقم.
-              onQtyChanged: (i, v) =>
-                  _quickUpdateGrouped(gs, i, v, 'qty'),
-              onWeightChanged: (i, v) =>
-                  _quickUpdateGrouped(gs, i, v, 'weight'),
-              onPriceChanged: (i, v) =>
-                  _quickUpdateGrouped(gs, i, v, 'price'),
+              // نفس الصنف مدمج في صف واحد — عرض فقط بلا تعديل كمية/وزن/سعر،
+              // وزر التعديل يفتح تفصيلة المسحات للحذف. أي مسحة تضل لخلية
+              // رقمية تُعالج كمسحة بدل حفظها كرقم.
+              editable: false,
               onScanRedirect: _handleCellScan,
               onEdit: (i) => _editGrouped(gs[i]),
               onDelete: (i) =>

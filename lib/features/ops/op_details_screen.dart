@@ -127,6 +127,13 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
   // تسلسل الإضافات: كل مسحة تلتقط بياناتها وتُنفذ بدورها دون تداخل
   // (حتى لا تضيع تحديثات الإجماليات مع المسح السريع).
   Future<void> _addQueue = Future.value();
+  // آخر صنف تم اعتماده/مسحه — لتنبيه "صنف جديد" عند تغيّر الصنف
+  // (الاستلام/التسليم فقط): لو مسح صنف مختلف عن السابق يظهر حوار تأكيد
+  // قبل الإضافة حتى لا تدخل كرتونة صنف آخر بالغلط.
+  String? _ackedCode;
+  bool _confirmingNewItem = false;
+  bool get _isReceiptDelivery =>
+      widget.kind == OpKind.receipt || widget.kind == OpKind.delivery;
 
   @override
   void initState() {
@@ -544,6 +551,59 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
     }
   }
 
+  /// تنبيه "صنف جديد": يظهر عند مسح صنف مختلف عن آخر صنف معتمد
+  /// (في الاستلام/التسليم فقط) — يذكر اسم الصنف ويسأل: إضافة أم لا.
+  /// صوت نظام + اهتزاز ليُنتبه له، ثم إعادة التركيز لحقل الباركود.
+  Future<bool> _confirmNewItem(String name) async {
+    _confirmingNewItem = true;
+    try {
+      HapticFeedback.heavyImpact();
+      SystemSound.play(SystemSoundType.alert);
+    } catch (_) {}
+    bool ok = false;
+    try {
+      final r = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          title: const Text('صنف جديد',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontFamily: 'Cairo',
+                  fontSize: 19,
+                  fontWeight: FontWeight.w800)),
+          content: Text(
+            'بدأت مسح صنف جديد:\n\n$name\n\nهل تريد إضافته؟',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+                fontFamily: 'Cairo',
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                height: 1.6),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('إلغاء')),
+            FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('إضافة')),
+          ],
+        ),
+      );
+      ok = r == true;
+    } catch (_) {
+      ok = false;
+    }
+    if (mounted) {
+      try {
+        barcodeFocus.requestFocus();
+      } catch (_) {}
+    }
+    _confirmingNewItem = false;
+    return ok;
+  }
+
   /// إدخال باركود: يبحث في أكواد الأصناف ثم حقل باركود الصنف ثم القالب
   /// المتغير ثم كود الصنف مباشرة،
   /// مسح بالماسح الفيزيائي أو Enter — يحل الباركود ويضيف الصنف
@@ -557,6 +617,8 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
     try {
       final code = BarcodeParser.clean(raw);
       if (code.isEmpty || !mounted) return;
+      // حوار "صنف جديد" مفتوح — تجاهل أي مسحة حتى لا تُضاف بدون تأكيد.
+      if (_confirmingNewItem) return;
       // منع المعالجة المكررة لنفس المسحة الواحدة عند وصولها من مسارين
       // (بث + كتابة + Enter + تلقائي) معًا — النافذة 400ms فقط، وأي ضغطة
       // جديدة بعدها لنفس الصنف تُعالج وتُسجل (لا تُلتهم).
@@ -642,7 +704,7 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
           weightC.text = _f(p.fixedWeight);
         }
       });
-      await _add();
+      await _add(fromScan: true);
       return;
     }
     // 2) باركود مسجل في حقل الصنف نفسه (products.barcode)
@@ -673,7 +735,7 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
             weightC.text = _f(pb.fixedWeight);
           }
         });
-        await _add();
+        await _add(fromScan: true);
         return;
       }
     } catch (_) {}
@@ -711,7 +773,7 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
             weightC.text = _f(p.fixedWeight);
           }
         });
-        await _add();
+        await _add(fromScan: true);
         return;
       }
     } catch (_) {}
@@ -748,7 +810,7 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
             weightC.text = _f(w);
           }
         });
-        await _add();
+        await _add(fromScan: true);
         return;
       }
     } catch (_) {}
@@ -781,7 +843,7 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
         weightC.text = _f(p.fixedWeight);
       }
     });
-    await _add();
+    await _add(fromScan: true);
   }
 
   String _f(double v) => v == v.truncateToDouble() ? v.toInt().toString() : v.toString();
@@ -807,13 +869,13 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
   /// التنفيذ. اللقطة ضرورية مع المسح السريع حتى لا تُكتب مسحة فوق
   /// بيانات مسحة أخرى قبل تنفيذها، والطابور يمنع تداخل تحديثات
   /// الإجماليات في قاعدة البيانات.
-  Future<void> _add() {
+  Future<void> _add({bool fromScan = false}) async {
     // إلغاء الإضافة التلقائية المعلقة بالسعر — الدخول هنا (يدوي أو تلقائي)
     // يعني تنفيذًا واحدًا فقط حتى لا يتكرر السطر.
     _priceAutoT?.cancel();
     if (productCode == null) {
       _scanAlert('حدد الصنف أولًا (امسح الباركود أو اختر من القائمة)');
-      return Future.value();
+      return;
     }
     // كل إضافة = وحدة واحدة (لا يوجد عدد كراتين).
     const qty = 1.0;
@@ -825,7 +887,32 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
       HapticFeedback.heavyImpact();
       _scanAlert(
           'تم تنفيذ الكمية المطلوبة (${_f(reqQty)}) — لا يمكن إضافة المزيد');
-      return Future.value();
+      return;
+    }
+    // تنبيه "صنف جديد" (استلام/تسليم فقط): لو المسح صنفًا مختلفًا عن آخر
+    // صنف معتمد نعرض حوار تأكيد قبل الإضافة حتى لا تدخل كرتونة صنف آخر
+    // بالغلط. الإضافة اليدوية (من القائمة/زر أضف) تُعتمد مباشرة.
+    if (_isReceiptDelivery) {
+      if (fromScan) {
+        final code = productCode!;
+        if (code != _ackedCode) {
+          final ok = await _confirmNewItem(productName ?? code);
+          if (!ok) {
+            if (mounted) {
+              _setBarcode('');
+              setState(() {
+                productCode = null;
+                productName = null;
+              });
+            }
+            return;
+          }
+          if (!mounted) return;
+          _ackedCode = code;
+        }
+      } else {
+        _ackedCode = productCode;
+      }
     }
     // لو العملية غير نقدية السعر يُحفظ صفرًا دائمًا (طلب المستخدم).
     // parseNum يقبل الأرقام العربية أيضًا حتى يسمع السعر المدخل بأي لوحة.
@@ -842,7 +929,7 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
       try {
         priceFocus.requestFocus();
       } catch (_) {}
-      return Future.value();
+      return;
     }
     // حُجزت في الطابور — تُخصم عند التنفيذ (نجاحًا أو فشلًا) حتى يبقى
     // فحص السقف دقيقًا مع المسح السريع المتتالي.
@@ -1069,6 +1156,8 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
         productName: g.name,
         reqQty: reqQty,
         othersQty: others,
+        readOnly: widget.kind == OpKind.receipt ||
+            widget.kind == OpKind.delivery,
       ),
     );
     if (ok == true) {
@@ -1247,7 +1336,7 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
                       child: SizedBox(
                         height: 52,
                         child: ElevatedButton(
-                          onPressed: saving ? null : _add,
+                          onPressed: saving ? null : () => _add(),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: RefColors.primary,
                             foregroundColor: Colors.white,
@@ -1309,6 +1398,10 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
           else
             Builder(builder: (context) {
               final gs = grouped;
+              // الاستلام/التسليم: عرض فقط (تيكست ثابت) بلا تعديل مباشر
+              // للكمية/الوزن/السعر — وزر التعديل يفتح تفصيلة المسحات للحذف.
+              final ro = widget.kind == OpKind.receipt ||
+                  widget.kind == OpKind.delivery;
               return Padding(
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
                 child: LinesCellTable(
@@ -1326,10 +1419,14 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
                   // نفس الصنف مدمج في صف واحد — الخلايا تحدّث الإجمالي،
                   // والتعديل يعرض كل مسحة في صف مستقل.
                   // أي مسحة تضل لحقل خلية تُعاد للباركود بدل حفظها كرقم.
-                  onQtyChanged: (i, v) => _quickUpdateGrouped(i, qty: v),
-                  onWeightChanged: (i, v) =>
-                      _quickUpdateGrouped(i, weight: v),
-                  onPriceChanged: (i, v) => _quickUpdateGrouped(i, price: v),
+                  editable: !ro,
+                  onQtyChanged:
+                      ro ? null : (i, v) => _quickUpdateGrouped(i, qty: v),
+                  onWeightChanged: ro
+                      ? null
+                      : (i, v) => _quickUpdateGrouped(i, weight: v),
+                  onPriceChanged:
+                      ro ? null : (i, v) => _quickUpdateGrouped(i, price: v),
                   onScanRedirect: _handleCellScan,
                   onEdit: (i) => _editGrouped(gs[i]),
                   onDelete: (i) => _deleteGrouped(gs[i]),
@@ -1532,6 +1629,8 @@ class _GroupedEditDialog extends ConsumerStatefulWidget {
   final String productName;
   final double reqQty;
   final double othersQty;
+  /// true = عرض وحذف فقط (بدون تعديل مسحة/توحيد سعر) — للاستلام والتسليم.
+  final bool readOnly;
   const _GroupedEditDialog({
     required this.kind,
     required this.headerId,
@@ -1539,6 +1638,7 @@ class _GroupedEditDialog extends ConsumerStatefulWidget {
     required this.productName,
     required this.reqQty,
     required this.othersQty,
+    this.readOnly = false,
   });
   @override
   ConsumerState<_GroupedEditDialog> createState() =>
@@ -1760,25 +1860,27 @@ class _GroupedEditDialogState extends ConsumerState<_GroupedEditDialog> {
                                 fontSize: 13,
                                 fontWeight: FontWeight.w800)),
                         const SizedBox(height: 8),
-                        Row(children: [
-                          Expanded(
-                            child: TextField(
-                              controller: priceAllC,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                      decimal: true),
-                              textDirection: TextDirection.ltr,
-                              decoration: const InputDecoration(
-                                  labelText: 'سعر موحد للكل',
-                                  isDense: true),
+                        if (!widget.readOnly) ...[
+                          Row(children: [
+                            Expanded(
+                              child: TextField(
+                                controller: priceAllC,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                        decimal: true),
+                                textDirection: TextDirection.ltr,
+                                decoration: const InputDecoration(
+                                    labelText: 'سعر موحد للكل',
+                                    isDense: true),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          FilledButton.tonal(
-                              onPressed: busy ? null : _applyPriceAll,
-                              child: const Text('توحيد')),
-                        ]),
-                        const SizedBox(height: 8),
+                            const SizedBox(width: 8),
+                            FilledButton.tonal(
+                                onPressed: busy ? null : _applyPriceAll,
+                                child: const Text('توحيد')),
+                          ]),
+                          const SizedBox(height: 8),
+                        ],
                         ...scans.asMap().entries.map((e) {
                           final i = e.key;
                           final s = e.value;
@@ -1817,16 +1919,17 @@ class _GroupedEditDialogState extends ConsumerState<_GroupedEditDialog> {
                                   ],
                                 ),
                               ),
-                              InkWell(
-                                onTap: busy ? null : () => _editScan(s),
-                                borderRadius: BorderRadius.circular(8),
-                                child: const Padding(
-                                  padding: EdgeInsets.all(6),
-                                  child: Icon(Icons.edit_outlined,
-                                      size: 20,
-                                      color: Color(0xFF184E77)),
+                              if (!widget.readOnly)
+                                InkWell(
+                                  onTap: busy ? null : () => _editScan(s),
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(6),
+                                    child: Icon(Icons.edit_outlined,
+                                        size: 20,
+                                        color: Color(0xFF184E77)),
+                                  ),
                                 ),
-                              ),
                               InkWell(
                                 onTap: busy ? null : () => _deleteScan(s),
                                 borderRadius: BorderRadius.circular(8),

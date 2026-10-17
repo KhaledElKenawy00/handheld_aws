@@ -117,62 +117,55 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
     return r ?? false;
   }
 
-  // حماية حقل الرمز: الرمز يُكتب يدويًا فقط ولا يقبل المسح —
-  // لو وقعت مسحة ماسح (wedge) في الحقل بالغلط تُنقل كاملة لحقل الباركود
-  // بعد انتهاء الدفعة (350ms) بدل ما تفسد الرمز. الكتابة اليدوية البطيئة
-  // لا تُنقل أبدًا (النافذة الزمنية تكشفها).
-  String _codeBase = '';
-  DateTime _codeBaseT = DateTime.fromMillisecondsSinceEpoch(0);
-  Timer? _codeBurstT;
+  // حماية الحقول: الرمز والاسم يُكتبان يدويًا فقط ولا يقبلان المسح —
+  // لو وقعت مسحة ماسح (wedge) في أي منهما بالغلط تُنزع كاملة وتُنقل
+  // لحقل الباركود بعد استقرار الدفعة، بدل أن تفسد الرمز/الاسم.
+  // وحقل الباركود نفسه: كل مسحة جديدة تستبدل القديمة بالكامل (مسح مرتين
+  // ورا بعض = آخر باركود فقط). الكتابة اليدوية البطيئة لا تتأثر.
+  late final _ScanFieldGuard _codeGuard;
+  late final _ScanFieldGuard _nameGuard;
+  late final _ScanFieldGuard _barcodeGuard;
 
-  void _onCodeChanged() {
-    final t = codeC.text;
-    final now = DateTime.now();
-    // مسح/تعديل يدوي (نقص أو كتابة وسط النص) — قاعدة جديدة وإلغاء معلق.
-    if (t.length < _codeBase.length || !t.startsWith(_codeBase)) {
-      _codeBase = t;
-      _codeBaseT = now;
-      _codeBurstT?.cancel();
-      return;
-    }
-    final grown = t.length - _codeBase.length;
-    final sinceBase = now.difference(_codeBaseT).inMilliseconds;
-    if (sinceBase >= 1500) {
-      // بطيء — قاعدة جديدة وإلغاء أي نقل معلق.
-      _codeBase = t;
-      _codeBaseT = now;
-      _codeBurstT?.cancel();
-      return;
-    }
-    if (grown >= 8) {
-      // دفعة سريعة (ماسح) — انتظر انتهاءها ثم انقلها كاملة مرة واحدة.
-      _codeBurstT?.cancel();
-      final base = _codeBase;
-      final baseT = _codeBaseT;
-      _codeBurstT = Timer(const Duration(milliseconds: 350), () {
-        if (!mounted) return;
-        final cur = codeC.text;
-        if (!cur.startsWith(base) || cur.length <= base.length) return;
-        // تحقق زمني لحظة التنفيذ: البطيء يكون تجاوز النافذة.
-        if (DateTime.now().difference(baseT).inMilliseconds >= 1500) return;
-        final burst = cur.substring(base.length);
-        codeC.text = base;
-        codeC.selection = TextSelection.collapsed(offset: base.length);
-        _codeBase = base;
-        _codeBaseT = DateTime.now();
-        setState(() {
-          barcodeC.text = burst;
-        });
-        barcodeFocus.requestFocus();
-        refToast(context, 'الرمز يُكتب يدويًا — نُقلت المسحة لحقل الباركود');
-      });
-    }
+  void _initScanGuards() {
+    _codeGuard = _ScanFieldGuard(codeC, onBurst: (burst, base) {
+      _codeGuard.setText(base);
+      _consumeScan(burst, 'الرمز يُكتب يدويًا — نُقلت المسحة لحقل الباركود');
+    });
+    _nameGuard = _ScanFieldGuard(nameC, onBurst: (burst, base) {
+      _nameGuard.setText(base);
+      _consumeScan(burst, 'الاسم يُكتب يدويًا — نُقلت المسحة لحقل الباركود');
+    });
+    _barcodeGuard = _ScanFieldGuard(barcodeC, onBurst: (burst, base) {
+      // مسحة جديدة فوق باركود قديم → القديم يُمسح والجديد فقط يُحفظ.
+      _consumeScan(burst);
+    });
+  }
+
+  /// استقبال مسحة في حقل الباركود: تضبط المقاطع وتستبدل المحتوى السابق
+  /// بالكامل (حتى لو كانت هناك مسحة قديمة)، مع اهتزاز وتنبيه.
+  void _consumeScan(String code, [String? toast]) {
+    if (!mounted || code.isEmpty) return;
+    HapticFeedback.lightImpact();
+    setState(() {
+      lastScanned = code;
+      // لا توسّع تلقائيًا: 0 تعني "غير محدد" وتبقى كذلك حتى يحددها
+      // المستخدم من الدايلوج — فقط قصّ القيم المضبوطة على الطول الجديد.
+      wStart = _clampSeg(wStart, code.length);
+      wEnd = _clampSeg(wEnd, code.length);
+      cStart = _clampSeg(cStart, code.length);
+      cEnd = _clampSeg(cEnd, code.length);
+      dStart = _clampSeg(dStart, code.length);
+      dEnd = _clampSeg(dEnd, code.length);
+    });
+    _barcodeGuard.setText(code);
+    barcodeFocus.requestFocus();
+    refToast(context, toast ?? 'تم مسح الباركود: $code');
   }
 
   @override
   void initState() {
     super.initState();
-    codeC.addListener(_onCodeChanged);
+    _initScanGuards();
     if (widget.editCode != null) {
       _load();
     } else {
@@ -193,11 +186,13 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
     setState(() => loading = true);
     final p = await ref.read(productRepoProvider).findByCode(widget.editCode!);
     if (p != null && mounted) {
-      codeC.text = p.code;
-      nameC.text = p.desc;
+      // ضبط برمجي للحقول عبر الحراس — حتى لا تُفسَّر بيانات التحميل
+      // كمسحة ماسح وتُنقل لحقل الباركود.
+      _codeGuard.setText(p.code);
+      _nameGuard.setText(p.desc);
       weightType = p.weightType;
       weightC.text = p.fixedWeight == 0 ? '' : p.fixedWeight.toString();
-      barcodeC.text = p.barcode ?? '';
+      _barcodeGuard.setText(p.barcode ?? '');
       hasCode = p.hasCode;
       hasWeight = p.hasWeight;
       hasDate = p.hasDate;
@@ -246,21 +241,7 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
       if (code.isEmpty) return;
       // لا يوجد حقل باركود في وضع الوزن الثابت — تجاهل المسح.
       if (weightType != 'متغير') return;
-      HapticFeedback.lightImpact();
-      setState(() {
-        lastScanned = code;
-        // لا توسّع تلقائيًا: 0 تعني "غير محدد" وتبقى كذلك حتى يحددها
-        // المستخدم من الدايلوج — فقط قصّ القيم المضبوطة على الطول الجديد.
-        wStart = _clampSeg(wStart, code.length);
-        wEnd = _clampSeg(wEnd, code.length);
-        cStart = _clampSeg(cStart, code.length);
-        cEnd = _clampSeg(cEnd, code.length);
-        dStart = _clampSeg(dStart, code.length);
-        dEnd = _clampSeg(dEnd, code.length);
-      });
-      barcodeC.text = code;
-      barcodeFocus.requestFocus();
-      refToast(context, 'تم مسح الباركود: $code');
+      _consumeScan(code);
     } catch (e) {
       if (mounted) refError(context, 'تعذر استقبال المسحة: $e');
     }
@@ -283,8 +264,9 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
   @override
   void dispose() {
     scanSub?.cancel();
-    _codeBurstT?.cancel();
-    codeC.removeListener(_onCodeChanged);
+    _codeGuard.dispose();
+    _nameGuard.dispose();
+    _barcodeGuard.dispose();
     codeC.dispose();
     nameC.dispose();
     weightC.dispose();
@@ -1103,10 +1085,14 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
   }
 
   Widget _ruler(String barcode, int s, int e) {
-    // 0 = غير محدد: بدون تظليل حتى يحدد المستخدم المقطع بالأسهم.
-    final unset = s <= 0 || e <= 0;
-    var a = s;
-    var b = e;
+    // كل حد يظهر بمجرد ضبطه: لو حُدّدت البداية فقط تُظلَّل خانتها فورًا،
+    // وكذلك النهاية — وبمجرد ضبط الاثنين يُظلَّل المقطع كامل بينهما
+    // مع إبراز خانتي الطرفين ليعرف المستخدم مكانه بالضبط.
+    final hasS = s > 0;
+    final hasE = e > 0;
+    final unset = !hasS && !hasE;
+    var a = hasS ? s : e;
+    var b = hasE ? e : s;
     if (a > b) {
       final t = a;
       a = b;
@@ -1120,43 +1106,135 @@ class _AddItemState extends ConsumerState<AddItemScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             for (var i = 0; i < barcode.length; i++)
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 1.5),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 5, vertical: 4),
-                decoration: BoxDecoration(
-                  color: (!unset && i + 1 >= a && i + 1 <= b)
-                      ? RefColors.primary.withValues(alpha: .2)
-                      : Colors.white,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: (!unset && i + 1 >= a && i + 1 <= b)
-                        ? RefColors.primary
-                        : RefColors.fieldBorder,
-                  ),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(barcode[i],
-                        style: const TextStyle(
-                            fontFamily: 'Cairo',
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800)),
-                    Text('${i + 1}',
-                        style: TextStyle(
-                            fontFamily: 'Cairo',
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: (!unset && i + 1 >= a && i + 1 <= b)
-                                ? RefColors.primary
-                                : RefColors.hintGrey)),
-                  ],
-                ),
+              _rulerCell(
+                barcode[i],
+                i + 1,
+                inRange: !unset && i + 1 >= a && i + 1 <= b,
+                boundary: !unset && (i + 1 == a || i + 1 == b),
               ),
           ],
         ),
       ),
     );
+  }
+
+  /// خانة رقم واحدة في المسطرة — تُبرز الخانة الطرفية التي يقف عليها المستخدم.
+  Widget _rulerCell(String ch, int pos,
+      {required bool inRange, required bool boundary}) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 1.5),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+      decoration: BoxDecoration(
+        color: inRange
+            ? RefColors.primary.withValues(alpha: boundary ? .42 : .18)
+            : Colors.white,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: inRange ? RefColors.primary : RefColors.fieldBorder,
+          width: boundary ? 2.4 : 1,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(ch,
+              style: const TextStyle(
+                  fontFamily: 'Cairo',
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800)),
+          Text('$pos',
+              style: TextStyle(
+                  fontFamily: 'Cairo',
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: inRange ? RefColors.primary : RefColors.hintGrey)),
+        ],
+      ),
+    );
+  }
+}
+
+/// حراسة حقل نصي من مسحات الماسح الضالة (وضع wedge يكتب في الحقل المركّز):
+/// يراقب التغييرات، ولو رصد دفعة سريعة بمواصفات باركود (طول ≥ [minBurst]
+/// بمتوسط <50ms للمحرف) يستدعي [onBurst] بالمسحة وحدها وبالنص الذي كان
+/// قبلها. الكتابة اليدوية البطيئة أو الحذف لا يتأثران.
+class _ScanFieldGuard {
+  final TextEditingController controller;
+  final void Function(String burst, String base) onBurst;
+
+  static const int minBurst = 4;
+
+  String _prev;
+  String _base;
+  DateTime _burstStart = DateTime.now();
+  DateTime _lastChange = DateTime.now();
+  Timer? _settle;
+  bool _suppress = false;
+
+  _ScanFieldGuard(this.controller, {required this.onBurst})
+      : _prev = controller.text,
+        _base = controller.text {
+    controller.addListener(_onChanged);
+  }
+
+  void dispose() {
+    _settle?.cancel();
+    controller.removeListener(_onChanged);
+  }
+
+  /// ضبط برمجي للنص (تحميل/نتيجة مسح) — لا يُعدّ إدخالًا من المستخدم.
+  void setText(String value) {
+    _suppress = true;
+    controller.text = value;
+    controller.selection = TextSelection.collapsed(offset: value.length);
+    _suppress = false;
+    _prev = value;
+    _base = value;
+    _settle?.cancel();
+    final now = DateTime.now();
+    _burstStart = now;
+    _lastChange = now;
+  }
+
+  bool _isBurst(String text) {
+    if (text.length <= _base.length || !text.startsWith(_base)) return false;
+    final grew = text.length - _base.length;
+    if (grew < minBurst) return false;
+    final ms = _lastChange.difference(_burstStart).inMilliseconds;
+    return ms < grew * 50;
+  }
+
+  void _onChanged() {
+    if (_suppress) {
+      _prev = controller.text;
+      return;
+    }
+    final t = controller.text;
+    final now = DateTime.now();
+    // حذف/تعديل وسط النص — إعادة ضبط القاعدة وإلغاء أي مسحة معلقة.
+    if (t.length < _prev.length || !t.startsWith(_prev)) {
+      _prev = t;
+      _base = t;
+      _burstStart = now;
+      _lastChange = now;
+      _settle?.cancel();
+      return;
+    }
+    // فجوة زمنية = قد تبدأ مسحة جديدة → الأساس هو النص قبل هذا التغيير.
+    if (now.difference(_lastChange).inMilliseconds > 120) {
+      _base = _prev;
+      _burstStart = now;
+    }
+    _prev = t;
+    _lastChange = now;
+    _settle?.cancel();
+    if (t.length - _base.length < minBurst) return;
+    _settle = Timer(const Duration(milliseconds: 250), _fire);
+  }
+
+  void _fire() {
+    final t = controller.text;
+    if (!_isBurst(t)) return;
+    onBurst(t.substring(_base.length), _base);
   }
 }
