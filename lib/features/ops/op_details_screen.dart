@@ -80,7 +80,6 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
   String? productCode;
   String? productName;
   String? lastScanned;
-  List<Product> products = [];
   List<_DetailsLine> lines = [];
   StreamSubscription? scanSub;
   bool saving = false;
@@ -159,9 +158,6 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
   }
 
   Future<void> _load() async {
-    final ps = await ref.read(productRepoProvider).search('', limit: 1000);
-    if (!mounted) return;
-    setState(() => products = ps);
     await _loadCash();
     await _reloadLines();
   }
@@ -896,6 +892,23 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
     return null;
   }
 
+  /// اختيار الصنف يدويًا من قائمة قابلة للبحث. تُحمَّل النتائج على دفعات
+  /// (ListView.builder) بدل بناء كل الأصناف مرة واحدة — كان تحميل/بناء 1000
+  /// صنف سبب تجمّد الشاشة عند فتح المعاملة.
+  Future<void> _pickProduct() async {
+    final picked = await showModalBottomSheet<Product>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => const _ProductPicker(),
+    );
+    if (picked != null && mounted) {
+      setState(() {
+        productCode = picked.code;
+        productName = picked.desc;
+      });
+    }
+  }
+
   /// دخول الإضافة: يلتقط لقطة من البيانات الحالية ثم يصفّها في طابور
   /// التنفيذ. اللقطة ضرورية مع المسح السريع حتى لا تُكتب مسحة فوق
   /// بيانات مسحة أخرى قبل تنفيذها، والطابور يمنع تداخل تحديثات
@@ -1015,7 +1028,7 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
       });
       await _reloadLines();
       if (mounted) {
-        refToast(context, 'تمت الإضافة');
+        refToast(context, 'تمت الإضافة', duration: const Duration(milliseconds: 700));
         // إبقاء التركيز على الباركود لمسح الصنف التالي مباشرة.
         barcodeFocus.requestFocus();
       }
@@ -1325,25 +1338,27 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
                   children: [
                     Expanded(
                       flex: 2,
-                      child: RefDropdown<String>(
-                        label: 'حدد الصنف',
-                        value: productCode,
-                        items: [
-                          for (final p in products)
-                            DropdownMenuItem(
-                                value: p.code,
-                                child: Text('${p.desc} - ${p.code}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis)),
-                        ],
-                        onChanged: (v) async {
-                          if (v == null) return;
-                          final p = await ref.read(productRepoProvider).findByCode(v);
-                          setState(() {
-                            productCode = v;
-                            productName = p?.desc ?? v;
-                          });
-                        },
+                      child: InkWell(
+                        onTap: _pickProduct,
+                        borderRadius: BorderRadius.circular(12),
+                        child: InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'حدد الصنف',
+                            suffixIcon: Icon(Icons.search_rounded, size: 26),
+                          ),
+                          child: Text(
+                            productName ?? 'امسح أو اختر الصنف',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontFamily: 'Cairo',
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                                color: productName == null
+                                    ? RefColors.hintGrey
+                                    : RefColors.navy),
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -1504,6 +1519,103 @@ class _OpDetailsState extends ConsumerState<OpDetailsScreen> {
           ),
         ],
       ),
+      ),
+    );
+  }
+}
+
+/// منتقي صنف قابل للبحث — يُحمّل النتائج على دفعات بدل كل الأصناف مرة واحدة.
+class _ProductPicker extends ConsumerStatefulWidget {
+  const _ProductPicker();
+  @override
+  ConsumerState<_ProductPicker> createState() => _ProductPickerState();
+}
+
+class _ProductPickerState extends ConsumerState<_ProductPicker> {
+  final searchC = TextEditingController();
+  String q = '';
+  int _limit = 15;
+
+  @override
+  void dispose() {
+    searchC.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          left: 12,
+          right: 12,
+          top: 12,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 12,
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          RefField(
+            controller: searchC,
+            label: 'بحث عن صنف (بالاسم أو الكود)...',
+            autofocus: true,
+            onChanged: (v) => setState(() {
+              q = v;
+              _limit = 15;
+            }),
+          ),
+          const SizedBox(height: 8),
+          FutureBuilder(
+            future: Future.wait([
+              ref.read(productRepoProvider).search(q, limit: _limit),
+              ref.read(productRepoProvider).count(q: q),
+            ]),
+            builder: (_, snap) {
+              if (!snap.hasData) {
+                return const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: CircularProgressIndicator(),
+                );
+              }
+              final items = (snap.data![0] as List).cast<Product>();
+              final total = snap.data![1] as int;
+              if (items.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text('لا توجد نتائج',
+                      style: TextStyle(
+                          fontFamily: 'Cairo',
+                          fontSize: 17,
+                          color: RefColors.hintGrey)),
+                );
+              }
+              return Flexible(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: items.length,
+                          itemBuilder: (_, i) => ListTile(
+                                title: Text(items[i].desc,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
+                                subtitle: Text(items[i].code),
+                                onTap: () =>
+                                    Navigator.pop(context, items[i]),
+                              )),
+                    ),
+                    if (items.length < total)
+                      TextButton(
+                        onPressed: () => setState(() => _limit += 15),
+                        child: Text(
+                            'عرض المزيد (${items.length} من $total)'),
+                      ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ]),
       ),
     );
   }

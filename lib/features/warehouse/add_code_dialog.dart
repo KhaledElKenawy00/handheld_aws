@@ -56,6 +56,29 @@ Future<void> showAddCodeDialog(
   // الخانة النشطة للمرّر التلقائي للمسطرة (البداية/النهاية الأخيرة المضبوطة).
   int focusPos = 0;
 
+  // لو الصنف له كود مسجّل بالفعل: انسخ نفس إعدادات المقطع منه، فيكون
+  // الباركود الجديد بنفس القواعد — أي كود من الاتنين يجيب نفس الصنف،
+  // ومايحتاجش المستخدم يعيد ضبط المقطع لكل باركود.
+  bool hasExisting = false;
+  try {
+    final existing =
+        await ref.read(productCodeRepoProvider).forProduct(p.code);
+    if (existing.isNotEmpty) {
+      final c = existing.first;
+      hasExisting = true;
+      mark = c.mark;
+      unit = c.unit;
+      dateFmt = c.dateFmt;
+      wStart = c.wStart;
+      wEnd = c.wEnd;
+      cStart = c.cStart;
+      cEnd = c.cEnd;
+      dStart = c.dStart;
+      dEnd = c.dEnd;
+    }
+  } catch (_) {}
+  if (!context.mounted) return;
+
   int clampCodePos(int v, int len) {
     if (v < 0) return 0;
     if (len <= 0) return v > 99 ? 99 : v;
@@ -88,7 +111,14 @@ Future<void> showAddCodeDialog(
       final len = code.length;
       if (len > 0) {
         wStart = BarcodeParser.clampPos(wStart, len);
-        wEnd = BarcodeParser.clampPos(wEnd == 1 && len > 1 ? len : wEnd, len);
+        // لو مافيش كود سابق: أول مسح يمدّ نهاية الوزن لطول الباركود.
+        // لو فيه كود سابق: نحافظ على المقطع المنسوخ كما هو (مقطع ثابت).
+        if (!hasExisting) {
+          wEnd = BarcodeParser.clampPos(
+              wEnd == 1 && len > 1 ? len : wEnd, len);
+        } else {
+          wEnd = BarcodeParser.clampPos(wEnd, len);
+        }
         cStart = clampCodePos(cStart, len);
         cEnd = clampCodePos(cEnd, len);
         dStart = clampCodePos(dStart, len);

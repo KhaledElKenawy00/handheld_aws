@@ -793,8 +793,13 @@ class RefCashRow extends StatelessWidget {
   }
 }
 
-void refToast(BuildContext context, String msg) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+void refToast(BuildContext context, String msg,
+    {Duration duration = const Duration(seconds: 4)}) {
+  final messenger = ScaffoldMessenger.of(context);
+  // امسح أي توست سابق فورًا حتى لا تتراكم الرسائل وتطول مدة الاختفاء.
+  messenger.removeCurrentSnackBar();
+  messenger.showSnackBar(SnackBar(
+      duration: duration,
       content: Text(msg,
           style: const TextStyle(fontFamily: 'Cairo', fontSize: 15, fontWeight: FontWeight.w700))));
 }
